@@ -14,7 +14,145 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      customers: {
+        Row: {
+          address: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          name: string
+          notes: string | null
+          phone_cu: string | null
+          phone_mx: string
+          updated_at: string | null
+        }
+        Insert: {
+          address: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          phone_cu?: string | null
+          phone_mx: string
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          phone_cu?: string | null
+          phone_mx?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          assigned_to: string | null
+          created_at: string | null
+          created_by: string | null
+          cup_amount: number | null
+          customer_id: string
+          delivery_status: Database["public"]["Enums"]["delivery_status"] | null
+          eur_amount: number | null
+          id: string
+          payment_status: Database["public"]["Enums"]["payment_status"] | null
+          total_mxn: number
+          updated_at: string | null
+          usd_amount: number | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          cup_amount?: number | null
+          customer_id: string
+          delivery_status?:
+            | Database["public"]["Enums"]["delivery_status"]
+            | null
+          eur_amount?: number | null
+          id?: string
+          payment_status?: Database["public"]["Enums"]["payment_status"] | null
+          total_mxn: number
+          updated_at?: string | null
+          usd_amount?: number | null
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          cup_amount?: number | null
+          customer_id?: string
+          delivery_status?:
+            | Database["public"]["Enums"]["delivery_status"]
+            | null
+          eur_amount?: number | null
+          id?: string
+          payment_status?: Database["public"]["Enums"]["payment_status"] | null
+          total_mxn?: number
+          updated_at?: string | null
+          usd_amount?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          full_name: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          full_name: string
+          id: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          full_name?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +161,9 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "local" | "delivery"
+      delivery_status: "pending" | "in_transit" | "delivered"
+      payment_status: "pending" | "paid" | "verified"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +290,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "local", "delivery"],
+      delivery_status: ["pending", "in_transit", "delivered"],
+      payment_status: ["pending", "paid", "verified"],
+    },
   },
 } as const

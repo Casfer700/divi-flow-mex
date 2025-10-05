@@ -16,6 +16,7 @@ export default function Auth() {
   const [role, setRole] = useState<"local" | "delivery">("local");
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,7 +25,29 @@ export default function Auth() {
         navigate("/");
       }
     });
+    checkAvailableRoles();
   }, [navigate]);
+
+  const checkAvailableRoles = async () => {
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role");
+    
+    if (error) {
+      console.error("Error checking roles:", error);
+      setAvailableRoles(["local", "delivery"]);
+      return;
+    }
+
+    const takenRoles = data.map(r => r.role as string);
+    const available = ["local", "delivery"].filter(r => !takenRoles.includes(r));
+    setAvailableRoles(available);
+    
+    // Set default to first available role
+    if (available.length > 0 && !available.includes(role)) {
+      setRole(available[0] as "local" | "delivery");
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +55,7 @@ export default function Auth() {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -45,7 +68,20 @@ export default function Auth() {
         });
 
         if (error) throw error;
-        toast.success("Cuenta creada. Por favor revisa tu email.");
+
+        if (data.user) {
+          // Insert role into user_roles table
+          const { error: roleError } = await supabase
+            .from("user_roles")
+            .insert({ user_id: data.user.id, role: role });
+
+          if (roleError) {
+            toast.error(`Error al asignar rol: ${roleError.message}`);
+          } else {
+            toast.success("Cuenta creada. Por favor revisa tu email.");
+            checkAvailableRoles();
+          }
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -97,15 +133,26 @@ export default function Auth() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Rol</Label>
-                  <Select value={role} onValueChange={(value: "local" | "delivery") => setRole(value)}>
+                  <Select 
+                    value={role} 
+                    onValueChange={(value: "local" | "delivery") => setRole(value)}
+                    disabled={availableRoles.length === 0}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-popover">
-                      <SelectItem value="local">Local</SelectItem>
-                      <SelectItem value="delivery">Repartidor</SelectItem>
+                      <SelectItem value="local" disabled={!availableRoles.includes("local")}>
+                        Local {!availableRoles.includes("local") && "(No disponible)"}
+                      </SelectItem>
+                      <SelectItem value="delivery" disabled={!availableRoles.includes("delivery")}>
+                        Repartidor {!availableRoles.includes("delivery") && "(No disponible)"}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
+                  {availableRoles.length === 0 && (
+                    <p className="text-sm text-destructive">Todos los roles están ocupados</p>
+                  )}
                 </div>
               </>
             )}
@@ -131,7 +178,7 @@ export default function Auth() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || (isSignUp && availableRoles.length === 0)}>
               {loading ? "Procesando..." : isSignUp ? "Crear cuenta" : "Iniciar sesión"}
             </Button>
           </form>

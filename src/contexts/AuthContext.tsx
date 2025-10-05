@@ -58,25 +58,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (userId: string) => {
     try {
-      const { data: profileData, error: profileError } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
 
-      if (profileError) throw profileError;
+      if (error) throw error;
 
-      // Get actual role from user_roles table
+      // Fetch role from user_roles table
       const { data: roleData } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", userId)
         .single();
 
-      setProfile({
-        ...profileData,
-        role: roleData?.role || profileData.role
-      });
+      if (roleData) {
+        setProfile({ ...data, role: roleData.role });
+      } else {
+        setProfile(data);
+      }
     } catch (error) {
       console.error("Error fetching profile:", error);
     } finally {

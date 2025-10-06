@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, MessageCircle, MapPin, DollarSign } from "lucide-react";
+import { Plus, MessageCircle, MapPin, DollarSign, Search, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface Customer {
@@ -21,6 +21,19 @@ interface Customer {
   notes: string | null;
 }
 
+interface Profile {
+  id: string;
+  full_name: string;
+  role: string;
+}
+
+interface ExchangeRate {
+  currency: string;
+  rate_type: string;
+  buy_rate: number;
+  sell_rate: number;
+}
+
 interface Order {
   id: string;
   customer_id: string;
@@ -30,33 +43,48 @@ interface Order {
   total_mxn: number;
   payment_status: "pending" | "paid" | "verified";
   delivery_status: "pending" | "in_transit" | "delivered";
+  price_type: "wholesale" | "retail";
+  assigned_to: string | null;
   customers: Customer;
+  assigned_user?: Profile;
 }
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [formData, setFormData] = useState({
     customer_id: "",
     usd_amount: "",
     eur_amount: "",
     cup_amount: "",
     total_mxn: "",
+    price_type: "retail",
+    assigned_to: "",
   });
 
   useEffect(() => {
     fetchOrders();
     fetchCustomers();
+    fetchUsers();
+    fetchRates();
   }, []);
+
+  useEffect(() => {
+    calculateTotal();
+  }, [formData.usd_amount, formData.eur_amount, formData.cup_amount, formData.price_type]);
 
   const fetchOrders = async () => {
     const { data, error } = await supabase
       .from("orders")
       .select(`
         *,
-        customers (*)
+        customers (*),
+        assigned_user:profiles!orders_assigned_to_fkey (id, full_name, role)
       `)
       .order("created_at", { ascending: false });
 
@@ -64,7 +92,7 @@ export default function Dashboard() {
       toast.error("Error al cargar órdenes");
       return;
     }
-    setOrders(data || []);
+    setOrders((data || []) as Order[]);
   };
 
   const fetchCustomers = async () => {
@@ -80,15 +108,68 @@ export default function Dashboard() {
     setCustomers(data || []);
   };
 
+  const fetchUsers = async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, role")
+      .in("role", ["local", "delivery"]);
+
+    if (error) {
+      toast.error("Error al cargar usuarios");
+      return;
+    }
+    setUsers(data || []);
+  };
+
+  const fetchRates = async () => {
+    const { data, error } = await supabase
+      .from("exchange_rates")
+      .select("*");
+
+    if (error) {
+      toast.error("Error al cargar tasas");
+      return;
+    }
+    setRates(data || []);
+  };
+
+  const calculateTotal = () => {
+    if (!formData.usd_amount && !formData.eur_amount && !formData.cup_amount) {
+      return;
+    }
+
+    let total = 0;
+    const rateType = formData.price_type;
+
+    if (formData.usd_amount) {
+      const rate = rates.find(r => r.currency === "USD" && r.rate_type === rateType);
+      if (rate) total += parseFloat(formData.usd_amount) * rate.sell_rate;
+    }
+
+    if (formData.eur_amount) {
+      const rate = rates.find(r => r.currency === "EUR" && r.rate_type === rateType);
+      if (rate) total += parseFloat(formData.eur_amount) * rate.sell_rate;
+    }
+
+    if (formData.cup_amount) {
+      const rate = rates.find(r => r.currency === "CUP" && r.rate_type === rateType);
+      if (rate) total += parseFloat(formData.cup_amount) * rate.sell_rate;
+    }
+
+    setFormData(prev => ({ ...prev, total_mxn: total.toFixed(2) }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const { error } = await supabase.from("orders").insert([{
-      ...formData,
+      customer_id: formData.customer_id,
       usd_amount: parseFloat(formData.usd_amount) || 0,
       eur_amount: parseFloat(formData.eur_amount) || 0,
       cup_amount: parseFloat(formData.cup_amount) || 0,
       total_mxn: parseFloat(formData.total_mxn),
+      price_type: formData.price_type,
+      assigned_to: formData.assigned_to || null,
       created_by: user?.id,
     }]);
 
@@ -99,7 +180,15 @@ export default function Dashboard() {
 
     toast.success("Orden creada");
     setIsDialogOpen(false);
-    setFormData({ customer_id: "", usd_amount: "", eur_amount: "", cup_amount: "", total_mxn: "" });
+    setFormData({ 
+      customer_id: "", 
+      usd_amount: "", 
+      eur_amount: "", 
+      cup_amount: "", 
+      total_mxn: "",
+      price_type: "retail",
+      assigned_to: "",
+    });
     fetchOrders();
   };
 
@@ -150,30 +239,60 @@ CLABE - 012610011237666590
   const getPaymentBadge = (status: string) => {
     const variants = {
       pending: "warning",
-      paid: "success",
+      paid: "default",
       verified: "success",
     };
     const labels = {
-      pending: "Pendiente",
+      pending: "Pendiente pago",
       paid: "Pagado",
-      verified: "Verificado",
+      verified: "✓ Verificado",
     };
-    return <Badge variant={variants[status as keyof typeof variants] as any}>{labels[status as keyof typeof labels]}</Badge>;
+    return (
+      <Badge 
+        variant={variants[status as keyof typeof variants] as any}
+        className={status === "pending" ? "bg-warning text-warning-foreground" : ""}
+      >
+        {labels[status as keyof typeof labels]}
+      </Badge>
+    );
   };
 
   const getDeliveryBadge = (status: string) => {
     const variants = {
-      pending: "warning",
-      in_transit: "warning",
+      pending: "secondary",
+      in_transit: "default",
       delivered: "success",
     };
     const labels = {
-      pending: "Pendiente",
+      pending: "Por entregar",
       in_transit: "En camino",
-      delivered: "Entregado",
+      delivered: "✓ Entregado",
     };
-    return <Badge variant={variants[status as keyof typeof variants] as any}>{labels[status as keyof typeof labels]}</Badge>;
+    return (
+      <Badge 
+        variant={variants[status as keyof typeof variants] as any}
+        className={
+          status === "pending" 
+            ? "bg-secondary text-secondary-foreground" 
+            : status === "in_transit"
+            ? "bg-primary/20 text-primary"
+            : ""
+        }
+      >
+        {labels[status as keyof typeof labels]}
+      </Badge>
+    );
   };
+
+  const filteredOrders = orders.filter(order => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      order.customers.name.toLowerCase().includes(query) ||
+      order.customers.address.toLowerCase().includes(query) ||
+      order.customers.phone_mx.includes(query)
+    );
+  });
 
   return (
     <Layout>
@@ -188,7 +307,7 @@ CLABE - 012610011237666590
                   Nueva orden
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Nueva orden</DialogTitle>
                 </DialogHeader>
@@ -212,6 +331,24 @@ CLABE - 012610011237666590
                       </SelectContent>
                     </Select>
                   </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="price_type">Tipo de precio</Label>
+                    <Select
+                      value={formData.price_type}
+                      onValueChange={(value) => setFormData({ ...formData, price_type: value })}
+                      required
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover">
+                        <SelectItem value="retail">Menudeo</SelectItem>
+                        <SelectItem value="wholesale">Mayoreo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="usd">USD</Label>
@@ -244,8 +381,9 @@ CLABE - 012610011237666590
                       />
                     </div>
                   </div>
+                  
                   <div className="space-y-2">
-                    <Label htmlFor="total">Total MXN</Label>
+                    <Label htmlFor="total">Total MXN (calculado)</Label>
                     <Input
                       id="total"
                       type="number"
@@ -253,8 +391,29 @@ CLABE - 012610011237666590
                       value={formData.total_mxn}
                       onChange={(e) => setFormData({ ...formData, total_mxn: e.target.value })}
                       required
+                      className="bg-muted"
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="assigned_to">Asignar a</Label>
+                    <Select
+                      value={formData.assigned_to}
+                      onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sin asignar" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover">
+                        {users.map((usr) => (
+                          <SelectItem key={usr.id} value={usr.id}>
+                            {usr.full_name} ({usr.role === "local" ? "Local" : "Repartidor"})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
                   <Button type="submit" className="w-full">Crear orden</Button>
                 </form>
               </DialogContent>
@@ -262,16 +421,40 @@ CLABE - 012610011237666590
           )}
         </div>
 
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por cliente, dirección o teléfono..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+
         <div className="grid gap-4">
-          {orders.map((order) => (
+          {filteredOrders.map((order) => (
             <Card key={order.id}>
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <CardTitle className="text-lg">{order.customers.name}</CardTitle>
-                  <div className="flex gap-2">
-                    {getPaymentBadge(order.payment_status)}
-                    {getDeliveryBadge(order.delivery_status)}
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <CardTitle className="text-lg">{order.customers.name}</CardTitle>
+                    <div className="flex flex-wrap gap-2">
+                      {getPaymentBadge(order.payment_status)}
+                      {getDeliveryBadge(order.delivery_status)}
+                      <Badge variant="outline" className="text-xs">
+                        {order.price_type === "retail" ? "Menudeo" : "Mayoreo"}
+                      </Badge>
+                    </div>
                   </div>
+                  {order.assigned_user && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <User className="h-4 w-4" />
+                      <span>
+                        Asignado a: {order.assigned_user.full_name} 
+                        ({order.assigned_user.role === "local" ? "Local" : "Repartidor"})
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -303,49 +486,52 @@ CLABE - 012610011237666590
                     size="sm"
                     onClick={() => sendWhatsApp(order)}
                     className="gap-2"
+                    variant="outline"
                   >
                     <MessageCircle className="h-4 w-4" />
                     WhatsApp
                   </Button>
 
                   {(profile?.role === "admin" || profile?.role === "local") && (
-                    <Select
-                      value={order.payment_status}
-                      onValueChange={(value) => updateOrderStatus(order.id, "payment_status", value)}
-                    >
-                      <SelectTrigger className="w-[140px] h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover">
-                        <SelectItem value="pending">Pendiente</SelectItem>
-                        <SelectItem value="paid">Pagado</SelectItem>
-                        <SelectItem value="verified">Verificado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
+                    <>
+                      <Select
+                        value={order.payment_status}
+                        onValueChange={(value) => updateOrderStatus(order.id, "payment_status", value)}
+                      >
+                        <SelectTrigger className="w-[150px] h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover">
+                          <SelectItem value="pending">Pendiente pago</SelectItem>
+                          <SelectItem value="paid">Pagado</SelectItem>
+                          <SelectItem value="verified">Verificado</SelectItem>
+                        </SelectContent>
+                      </Select>
 
-                  <Select
-                    value={order.delivery_status}
-                    onValueChange={(value) => updateOrderStatus(order.id, "delivery_status", value)}
-                  >
-                    <SelectTrigger className="w-[140px] h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover">
-                      <SelectItem value="pending">Pendiente</SelectItem>
-                      <SelectItem value="in_transit">En camino</SelectItem>
-                      <SelectItem value="delivered">Entregado</SelectItem>
-                    </SelectContent>
-                  </Select>
+                      <Select
+                        value={order.delivery_status}
+                        onValueChange={(value) => updateOrderStatus(order.id, "delivery_status", value)}
+                      >
+                        <SelectTrigger className="w-[150px] h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover">
+                          <SelectItem value="pending">Por entregar</SelectItem>
+                          <SelectItem value="in_transit">En camino</SelectItem>
+                          <SelectItem value="delivered">Entregado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {orders.length === 0 && (
+        {filteredOrders.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
-            No hay órdenes registradas
+            {searchQuery ? "No se encontraron órdenes con ese criterio" : "No hay órdenes registradas"}
           </div>
         )}
       </div>

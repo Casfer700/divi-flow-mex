@@ -58,6 +58,75 @@ export type Database = {
           },
         ]
       }
+      exchange_rates: {
+        Row: {
+          buy_rate: number
+          created_at: string | null
+          created_by: string | null
+          currency: string
+          id: string
+          rate_type: string
+          sell_rate: number
+          updated_at: string | null
+        }
+        Insert: {
+          buy_rate: number
+          created_at?: string | null
+          created_by?: string | null
+          currency: string
+          id?: string
+          rate_type: string
+          sell_rate: number
+          updated_at?: string | null
+        }
+        Update: {
+          buy_rate?: number
+          created_at?: string | null
+          created_by?: string | null
+          currency?: string
+          id?: string
+          rate_type?: string
+          sell_rate?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      inventory_movements: {
+        Row: {
+          amount: number
+          created_at: string | null
+          created_by: string | null
+          currency: string
+          id: string
+          movement_type: string
+          notes: string | null
+          reference_id: string | null
+          reference_type: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          created_by?: string | null
+          currency: string
+          id?: string
+          movement_type: string
+          notes?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          created_by?: string | null
+          currency?: string
+          id?: string
+          movement_type?: string
+          notes?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           assigned_to: string | null
@@ -69,6 +138,7 @@ export type Database = {
           eur_amount: number | null
           id: string
           payment_status: Database["public"]["Enums"]["payment_status"] | null
+          price_type: string | null
           total_mxn: number
           updated_at: string | null
           usd_amount: number | null
@@ -85,6 +155,7 @@ export type Database = {
           eur_amount?: number | null
           id?: string
           payment_status?: Database["public"]["Enums"]["payment_status"] | null
+          price_type?: string | null
           total_mxn: number
           updated_at?: string | null
           usd_amount?: number | null
@@ -101,6 +172,7 @@ export type Database = {
           eur_amount?: number | null
           id?: string
           payment_status?: Database["public"]["Enums"]["payment_status"] | null
+          price_type?: string | null
           total_mxn?: number
           updated_at?: string | null
           usd_amount?: number | null

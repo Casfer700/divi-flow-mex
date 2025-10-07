@@ -4,6 +4,8 @@ import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { ExchangeRatesManager } from "@/components/admin/ExchangeRatesManager";
 import { InventoryManager } from "@/components/admin/InventoryManager";
+import { WhatsAppTemplatesManager } from "@/components/admin/WhatsAppTemplatesManager";
+import { ReportsManager } from "@/components/admin/ReportsManager";
 
 export default function Admin() {
   const { profile } = useAuth();
@@ -25,6 +27,8 @@ export default function Admin() {
         <h1 className="text-3xl font-bold">Administración</h1>
         <ExchangeRatesManager />
         <InventoryManager />
+        <WhatsAppTemplatesManager />
+        <ReportsManager />
       </div>
     </Layout>
   );

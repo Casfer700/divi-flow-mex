@@ -34,6 +34,13 @@ interface ExchangeRate {
   sell_rate: number;
 }
 
+interface WhatsAppTemplate {
+  id: string;
+  name: string;
+  template: string;
+  description: string | null;
+}
+
 interface Order {
   id: string;
   customer_id: string;
@@ -55,6 +62,7 @@ export default function Dashboard() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [rates, setRates] = useState<ExchangeRate[]>([]);
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [formData, setFormData] = useState({
@@ -72,6 +80,7 @@ export default function Dashboard() {
     fetchCustomers();
     fetchUsers();
     fetchRates();
+    fetchTemplates();
   }, []);
 
   useEffect(() => {
@@ -131,6 +140,18 @@ export default function Dashboard() {
       return;
     }
     setRates(data || []);
+  };
+
+  const fetchTemplates = async () => {
+    const { data, error } = await supabase
+      .from("whatsapp_templates")
+      .select("*");
+
+    if (error) {
+      toast.error("Error al cargar plantillas");
+      return;
+    }
+    setTemplates(data || []);
   };
 
   const calculateTotal = () => {
@@ -212,24 +233,46 @@ export default function Dashboard() {
   };
 
   const sendWhatsApp = (order: Order) => {
-    const message = `Hola ${order.customers.name},
+    // Get default template
+    const template = templates.find(t => t.name === "default_order");
+    
+    if (!template) {
+      toast.error("No hay plantilla configurada");
+      return;
+    }
 
-Te confirmamos tu orden de divisas:
-${order.usd_amount > 0 ? `- USD: $${order.usd_amount.toFixed(2)}\n` : ""}${order.eur_amount > 0 ? `- EUR: €${order.eur_amount.toFixed(2)}\n` : ""}${order.cup_amount > 0 ? `- CUP: $${order.cup_amount.toFixed(2)}\n` : ""}
-Total a pagar: $${order.total_mxn.toFixed(2)} MXN
+    // Build currency amounts string
+    const currencyAmounts = [
+      order.usd_amount > 0 ? `USD: $${order.usd_amount.toFixed(2)}` : null,
+      order.eur_amount > 0 ? `EUR: €${order.eur_amount.toFixed(2)}` : null,
+      order.cup_amount > 0 ? `CUP: $${order.cup_amount.toFixed(2)}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-Por favor realiza tu pago a:
-Banco: *BBVA*
-Nombre: Kevin Castellanos Fermin
-Concepto: ${order.customers.name}
+    // Payment status labels
+    const paymentStatusLabels = {
+      pending: "Pendiente",
+      paid: "Pagado",
+      verified: "Verificado",
+    };
 
-• Si su cuenta es BBVA ÚNICAMENTE:
-Número de cuenta - 1123766659
+    // Delivery status labels
+    const deliveryStatusLabels = {
+      pending: "Pendiente",
+      in_transit: "En tránsito",
+      delivered: "Entregado",
+    };
 
-• Si su cuenta es de otro banco:
-CLABE - 012610011237666590
-
-*Favor de enviar la captura del pago*`;
+    // Replace template variables
+    let message = template.template
+      .replace("{customer_name}", order.customers.name)
+      .replace("{currency_amounts}", currencyAmounts)
+      .replace("{total_mxn}", order.total_mxn.toFixed(2))
+      .replace("{address}", order.customers.address)
+      .replace("{phone_mx}", order.customers.phone_mx)
+      .replace("{payment_status}", paymentStatusLabels[order.payment_status])
+      .replace("{delivery_status}", deliveryStatusLabels[order.delivery_status]);
 
     const phone = order.customers.phone_mx.replace(/\D/g, "");
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;

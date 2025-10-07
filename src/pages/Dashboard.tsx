@@ -119,15 +119,23 @@ export default function Dashboard() {
 
   const fetchUsers = async () => {
     const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, role")
+      .from("user_roles")
+      .select("user_id, role, profiles!inner(id, full_name)")
       .in("role", ["local", "delivery"]);
 
     if (error) {
       toast.error("Error al cargar usuarios");
       return;
     }
-    setUsers(data || []);
+    
+    // Transform data to match Profile interface
+    const transformedData = (data || []).map(item => ({
+      id: item.user_id,
+      full_name: (item.profiles as any).full_name,
+      role: item.role
+    }));
+    
+    setUsers(transformedData);
   };
 
   const fetchRates = async () => {

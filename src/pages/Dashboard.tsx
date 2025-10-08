@@ -118,30 +118,45 @@ export default function Dashboard() {
   };
 
   const fetchUsers = async () => {
-    const { data, error } = await supabase
+    // First get user_roles for local and delivery
+    const { data: rolesData, error: rolesError } = await supabase
       .from("user_roles")
-      .select(`
-        user_id,
-        role,
-        profiles!user_roles_user_id_fkey (
-          id,
-          full_name
-        )
-      `)
+      .select("user_id, role")
       .in("role", ["local", "delivery"]);
 
-    if (error) {
+    if (rolesError) {
       toast.error("Error al cargar usuarios");
-      console.error("Error fetching users:", error);
+      console.error("Error fetching user roles:", rolesError);
       return;
     }
-    
-    // Transform data to match Profile interface
-    const transformedData = (data || []).map((item: any) => ({
-      id: item.user_id,
-      full_name: item.profiles?.full_name || "Usuario",
-      role: item.role
-    }));
+
+    if (!rolesData || rolesData.length === 0) {
+      setUsers([]);
+      return;
+    }
+
+    // Then get profiles for those users
+    const userIds = rolesData.map(r => r.user_id);
+    const { data: profilesData, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", userIds);
+
+    if (profilesError) {
+      toast.error("Error al cargar perfiles de usuarios");
+      console.error("Error fetching profiles:", profilesError);
+      return;
+    }
+
+    // Combine the data
+    const transformedData = rolesData.map((roleItem) => {
+      const profile = profilesData?.find(p => p.id === roleItem.user_id);
+      return {
+        id: roleItem.user_id,
+        full_name: profile?.full_name || "Usuario",
+        role: roleItem.role
+      };
+    });
     
     setUsers(transformedData);
   };

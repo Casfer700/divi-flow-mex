@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
+import { OrderCard } from "@/components/OrderCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +10,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Plus, MessageCircle, MapPin, DollarSign, Search, User } from "lucide-react";
+import { Plus, MessageCircle, MapPin, DollarSign, Search, User, Calendar as CalendarIcon } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface Customer {
@@ -54,6 +60,7 @@ interface Order {
   price_type: "wholesale" | "retail";
   assigned_to: string | null;
   delivery_notes: string | null;
+  delivery_date: string | null;
   customers: Customer;
   assigned_user?: Profile;
 }
@@ -71,9 +78,11 @@ export default function Dashboard() {
   const [deliveryFormData, setDeliveryFormData] = useState<{
     delivery_status: "pending" | "in_transit" | "delivered";
     delivery_notes: string;
+    delivery_date: Date | undefined;
   }>({
     delivery_status: "pending",
     delivery_notes: "",
+    delivery_date: undefined,
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [formData, setFormData] = useState({
@@ -84,6 +93,7 @@ export default function Dashboard() {
     total_mxn: "",
     price_type: "retail",
     assigned_to: "",
+    delivery_date: undefined as Date | undefined,
   });
 
   useEffect(() => {
@@ -233,6 +243,7 @@ export default function Dashboard() {
       total_mxn: parseFloat(formData.total_mxn),
       price_type: formData.price_type,
       assigned_to: formData.assigned_to || null,
+      delivery_date: formData.delivery_date?.toISOString() || null,
       created_by: user?.id,
     }]);
 
@@ -251,6 +262,7 @@ export default function Dashboard() {
       total_mxn: "",
       price_type: "retail",
       assigned_to: "",
+      delivery_date: undefined,
     });
     fetchOrders();
   };
@@ -279,6 +291,7 @@ export default function Dashboard() {
     setDeliveryFormData({
       delivery_status: order.delivery_status,
       delivery_notes: order.delivery_notes || "",
+      delivery_date: order.delivery_date ? new Date(order.delivery_date) : undefined,
     });
     setIsDeliveryDialogOpen(true);
   };
@@ -291,6 +304,7 @@ export default function Dashboard() {
       .update({
         delivery_status: deliveryFormData.delivery_status,
         delivery_notes: deliveryFormData.delivery_notes,
+        delivery_date: deliveryFormData.delivery_date?.toISOString() || null,
       })
       .eq("id", selectedOrder.id);
 
@@ -411,6 +425,15 @@ export default function Dashboard() {
     );
   });
 
+  // Separate orders for admin and local views
+  const localOrders = filteredOrders.filter(order => 
+    !order.assigned_to || order.assigned_user?.role === "local"
+  );
+  
+  const deliveryOrders = filteredOrders.filter(order => 
+    order.assigned_user?.role === "delivery"
+  );
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -530,6 +553,33 @@ export default function Dashboard() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label>Fecha de entrega</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formData.delivery_date ? (
+                            format(formData.delivery_date, "PPP", { locale: es })
+                          ) : (
+                            <span>Seleccionar fecha</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={formData.delivery_date}
+                          onSelect={(date) => setFormData({ ...formData, delivery_date: date })}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                   
                   <Button type="submit" className="w-full">Crear orden</Button>
                 </form>
@@ -548,124 +598,81 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="grid gap-4">
-          {filteredOrders.map((order) => (
-            <Card key={order.id}>
-              <CardHeader>
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <CardTitle className="text-lg">{order.customers.name}</CardTitle>
-                    <div className="flex flex-wrap gap-2">
-                      {getPaymentBadge(order.payment_status)}
-                      {getDeliveryBadge(order.delivery_status)}
-                      <Badge variant="outline" className="text-xs">
-                        {order.price_type === "retail" ? "Menudeo" : "Mayoreo"}
-                      </Badge>
-                    </div>
-                  </div>
-                  {order.assigned_user && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <User className="h-4 w-4" />
-                      <span>
-                        Asignado a: {order.assigned_user.full_name} 
-                        ({order.assigned_user.role === "local" ? "Local" : "Repartidor"})
-                      </span>
-                    </div>
-                  )}
+        {(profile?.role === "admin" || profile?.role === "local") ? (
+          <Tabs defaultValue="local" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="local">Órdenes Local</TabsTrigger>
+              <TabsTrigger value="delivery">Órdenes Delivery</TabsTrigger>
+            </TabsList>
+            <TabsContent value="local" className="space-y-4 mt-4">
+              {localOrders.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  {searchQuery ? "No se encontraron órdenes con ese criterio" : "No hay órdenes locales"}
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <DollarSign className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        {order.usd_amount > 0 && <span className="mr-2">USD: ${order.usd_amount.toFixed(2)}</span>}
-                        {order.eur_amount > 0 && <span className="mr-2">EUR: €{order.eur_amount.toFixed(2)}</span>}
-                        {order.cup_amount > 0 && <span>CUP: ${order.cup_amount.toFixed(2)}</span>}
-                      </div>
-                    </div>
-                    <p className="text-sm font-medium">Total: ${order.total_mxn.toFixed(2)} MXN</p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2 text-sm">
-                      <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                      <p className="text-muted-foreground">{order.customers.address}</p>
-                    </div>
-                    {order.customers.notes && (
-                      <p className="text-sm text-muted-foreground italic">{order.customers.notes}</p>
-                    )}
-                  </div>
-                 </div>
+              ) : (
+                <div className="grid gap-4">
+                  {localOrders.map((order) => (
+                    <OrderCard 
+                      key={order.id} 
+                      order={order} 
+                      profile={profile} 
+                      user={user}
+                      onUpdateStatus={updateOrderStatus}
+                      onOpenDeliveryDialog={openDeliveryDialog}
+                      onSendWhatsApp={sendWhatsApp}
+                      getPaymentBadge={getPaymentBadge}
+                      getDeliveryBadge={getDeliveryBadge}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="delivery" className="space-y-4 mt-4">
+              {deliveryOrders.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  {searchQuery ? "No se encontraron órdenes con ese criterio" : "No hay órdenes de delivery"}
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {deliveryOrders.map((order) => (
+                    <OrderCard 
+                      key={order.id} 
+                      order={order} 
+                      profile={profile} 
+                      user={user}
+                      onUpdateStatus={updateOrderStatus}
+                      onOpenDeliveryDialog={openDeliveryDialog}
+                      onSendWhatsApp={sendWhatsApp}
+                      getPaymentBadge={getPaymentBadge}
+                      getDeliveryBadge={getDeliveryBadge}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="grid gap-4">
+            {filteredOrders.map((order) => (
+              <OrderCard 
+                key={order.id} 
+                order={order} 
+                profile={profile} 
+                user={user}
+                onUpdateStatus={updateOrderStatus}
+                onOpenDeliveryDialog={openDeliveryDialog}
+                onSendWhatsApp={sendWhatsApp}
+                getPaymentBadge={getPaymentBadge}
+                getDeliveryBadge={getDeliveryBadge}
+              />
 
-                 {order.delivery_notes && (
-                   <div className="bg-muted p-3 rounded-md">
-                     <p className="text-sm font-medium mb-1">Notas de entrega:</p>
-                     <p className="text-sm text-muted-foreground">{order.delivery_notes}</p>
-                   </div>
-                 )}
+            ))}
+          </div>
+        )}
 
-                 <div className="flex flex-wrap gap-2">
-                   <Button
-                     size="sm"
-                     onClick={() => sendWhatsApp(order)}
-                     className="gap-2"
-                     variant="outline"
-                   >
-                     <MessageCircle className="h-4 w-4" />
-                     WhatsApp
-                   </Button>
-
-                   {(profile?.role === "admin" || profile?.role === "local") && (
-                     <>
-                       <Select
-                         value={order.payment_status}
-                         onValueChange={(value) => updateOrderStatus(order.id, "payment_status", value)}
-                       >
-                         <SelectTrigger className="w-[150px] h-9">
-                           <SelectValue />
-                         </SelectTrigger>
-                         <SelectContent className="bg-popover">
-                           <SelectItem value="pending">Pendiente pago</SelectItem>
-                           <SelectItem value="paid">Pagado</SelectItem>
-                           <SelectItem value="verified">Verificado</SelectItem>
-                         </SelectContent>
-                       </Select>
-
-                       <Select
-                         value={order.delivery_status}
-                         onValueChange={(value) => updateOrderStatus(order.id, "delivery_status", value)}
-                       >
-                         <SelectTrigger className="w-[150px] h-9">
-                           <SelectValue />
-                         </SelectTrigger>
-                         <SelectContent className="bg-popover">
-                           <SelectItem value="pending">Por entregar</SelectItem>
-                           <SelectItem value="in_transit">En camino</SelectItem>
-                           <SelectItem value="delivered">Entregado</SelectItem>
-                         </SelectContent>
-                       </Select>
-                     </>
-                   )}
-
-                   {profile?.role === "delivery" && order.assigned_to === user?.id && (
-                     <Button
-                       size="sm"
-                       onClick={() => openDeliveryDialog(order)}
-                       variant="default"
-                     >
-                       Actualizar entrega
-                     </Button>
-                   )}
-                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {filteredOrders.length === 0 && (
+        {profile?.role === "delivery" && filteredOrders.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
-            {searchQuery ? "No se encontraron órdenes con ese criterio" : "No hay órdenes registradas"}
+            {searchQuery ? "No se encontraron órdenes con ese criterio" : "No hay órdenes asignadas"}
           </div>
         )}
       </div>
@@ -709,6 +716,32 @@ export default function Dashboard() {
                 }
                 rows={4}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Fecha de entrega</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {deliveryFormData.delivery_date ? (
+                      format(deliveryFormData.delivery_date, "PPP", { locale: es })
+                    ) : (
+                      <span>Seleccionar fecha</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={deliveryFormData.delivery_date}
+                    onSelect={(date) => setDeliveryFormData({ ...deliveryFormData, delivery_date: date })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           <DialogFooter>

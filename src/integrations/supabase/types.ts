@@ -134,6 +134,7 @@ export type Database = {
           created_by: string | null
           cup_amount: number | null
           customer_id: string
+          delivery_date: string | null
           delivery_notes: string | null
           delivery_status: Database["public"]["Enums"]["delivery_status"] | null
           eur_amount: number | null
@@ -150,6 +151,7 @@ export type Database = {
           created_by?: string | null
           cup_amount?: number | null
           customer_id: string
+          delivery_date?: string | null
           delivery_notes?: string | null
           delivery_status?:
             | Database["public"]["Enums"]["delivery_status"]
@@ -168,6 +170,7 @@ export type Database = {
           created_by?: string | null
           cup_amount?: number | null
           customer_id?: string
+          delivery_date?: string | null
           delivery_notes?: string | null
           delivery_status?:
             | Database["public"]["Enums"]["delivery_status"]

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -52,6 +53,7 @@ interface Order {
   delivery_status: "pending" | "in_transit" | "delivered";
   price_type: "wholesale" | "retail";
   assigned_to: string | null;
+  delivery_notes: string | null;
   customers: Customer;
   assigned_user?: Profile;
 }
@@ -64,6 +66,15 @@ export default function Dashboard() {
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [deliveryFormData, setDeliveryFormData] = useState<{
+    delivery_status: "pending" | "in_transit" | "delivered";
+    delivery_notes: string;
+  }>({
+    delivery_status: "pending",
+    delivery_notes: "",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [formData, setFormData] = useState({
     customer_id: "",
@@ -260,6 +271,38 @@ export default function Dashboard() {
     }
 
     toast.success("Estado actualizado");
+    fetchOrders();
+  };
+
+  const openDeliveryDialog = (order: Order) => {
+    setSelectedOrder(order);
+    setDeliveryFormData({
+      delivery_status: order.delivery_status,
+      delivery_notes: order.delivery_notes || "",
+    });
+    setIsDeliveryDialogOpen(true);
+  };
+
+  const handleDeliveryUpdate = async () => {
+    if (!selectedOrder) return;
+
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        delivery_status: deliveryFormData.delivery_status,
+        delivery_notes: deliveryFormData.delivery_notes,
+      })
+      .eq("id", selectedOrder.id);
+
+    if (error) {
+      toast.error("Error al actualizar entrega");
+      console.error("Error updating delivery:", error);
+      return;
+    }
+
+    toast.success("Entrega actualizada");
+    setIsDeliveryDialogOpen(false);
+    setSelectedOrder(null);
     fetchOrders();
   };
 
@@ -553,51 +596,68 @@ export default function Dashboard() {
                       <p className="text-sm text-muted-foreground italic">{order.customers.notes}</p>
                     )}
                   </div>
-                </div>
+                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => sendWhatsApp(order)}
-                    className="gap-2"
-                    variant="outline"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    WhatsApp
-                  </Button>
+                 {order.delivery_notes && (
+                   <div className="bg-muted p-3 rounded-md">
+                     <p className="text-sm font-medium mb-1">Notas de entrega:</p>
+                     <p className="text-sm text-muted-foreground">{order.delivery_notes}</p>
+                   </div>
+                 )}
 
-                  {(profile?.role === "admin" || profile?.role === "local") && (
-                    <>
-                      <Select
-                        value={order.payment_status}
-                        onValueChange={(value) => updateOrderStatus(order.id, "payment_status", value)}
-                      >
-                        <SelectTrigger className="w-[150px] h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-popover">
-                          <SelectItem value="pending">Pendiente pago</SelectItem>
-                          <SelectItem value="paid">Pagado</SelectItem>
-                          <SelectItem value="verified">Verificado</SelectItem>
-                        </SelectContent>
-                      </Select>
+                 <div className="flex flex-wrap gap-2">
+                   <Button
+                     size="sm"
+                     onClick={() => sendWhatsApp(order)}
+                     className="gap-2"
+                     variant="outline"
+                   >
+                     <MessageCircle className="h-4 w-4" />
+                     WhatsApp
+                   </Button>
 
-                      <Select
-                        value={order.delivery_status}
-                        onValueChange={(value) => updateOrderStatus(order.id, "delivery_status", value)}
-                      >
-                        <SelectTrigger className="w-[150px] h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-popover">
-                          <SelectItem value="pending">Por entregar</SelectItem>
-                          <SelectItem value="in_transit">En camino</SelectItem>
-                          <SelectItem value="delivered">Entregado</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </>
-                  )}
-                </div>
+                   {(profile?.role === "admin" || profile?.role === "local") && (
+                     <>
+                       <Select
+                         value={order.payment_status}
+                         onValueChange={(value) => updateOrderStatus(order.id, "payment_status", value)}
+                       >
+                         <SelectTrigger className="w-[150px] h-9">
+                           <SelectValue />
+                         </SelectTrigger>
+                         <SelectContent className="bg-popover">
+                           <SelectItem value="pending">Pendiente pago</SelectItem>
+                           <SelectItem value="paid">Pagado</SelectItem>
+                           <SelectItem value="verified">Verificado</SelectItem>
+                         </SelectContent>
+                       </Select>
+
+                       <Select
+                         value={order.delivery_status}
+                         onValueChange={(value) => updateOrderStatus(order.id, "delivery_status", value)}
+                       >
+                         <SelectTrigger className="w-[150px] h-9">
+                           <SelectValue />
+                         </SelectTrigger>
+                         <SelectContent className="bg-popover">
+                           <SelectItem value="pending">Por entregar</SelectItem>
+                           <SelectItem value="in_transit">En camino</SelectItem>
+                           <SelectItem value="delivered">Entregado</SelectItem>
+                         </SelectContent>
+                       </Select>
+                     </>
+                   )}
+
+                   {profile?.role === "delivery" && order.assigned_to === user?.id && (
+                     <Button
+                       size="sm"
+                       onClick={() => openDeliveryDialog(order)}
+                       variant="default"
+                     >
+                       Actualizar entrega
+                     </Button>
+                   )}
+                 </div>
               </CardContent>
             </Card>
           ))}
@@ -609,6 +669,58 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Dialog for delivery updates */}
+      <Dialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Actualizar estado de entrega</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delivery_status">Estado de entrega</Label>
+              <Select
+                value={deliveryFormData.delivery_status}
+                onValueChange={(value) => 
+                  setDeliveryFormData({ 
+                    ...deliveryFormData, 
+                    delivery_status: value as "pending" | "in_transit" | "delivered"
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="pending">Por entregar</SelectItem>
+                  <SelectItem value="in_transit">En camino</SelectItem>
+                  <SelectItem value="delivered">Entregado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="delivery_notes">Notas de entrega</Label>
+              <Textarea
+                id="delivery_notes"
+                placeholder="Agregar notas sobre la entrega..."
+                value={deliveryFormData.delivery_notes}
+                onChange={(e) => 
+                  setDeliveryFormData({ ...deliveryFormData, delivery_notes: e.target.value })
+                }
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeliveryDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleDeliveryUpdate}>
+              Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

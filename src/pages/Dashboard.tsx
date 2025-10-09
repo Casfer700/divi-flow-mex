@@ -354,20 +354,23 @@ export default function Dashboard() {
   };
 
   const getPaymentBadge = (status: string) => {
-    const variants = {
-      pending: "warning",
-      paid: "default",
-      verified: "success",
-    };
     const labels = {
       pending: "Pendiente pago",
       paid: "Pagado",
       verified: "✓ Verificado",
     };
+    
+    const styles = {
+      pending: { backgroundColor: "hsl(4, 100%, 60%)", color: "white" },
+      paid: { backgroundColor: "hsl(134, 61%, 41%)", color: "white" },
+      verified: { backgroundColor: "hsl(134, 61%, 41%)", color: "white" },
+    };
+    
     return (
       <Badge 
-        variant={variants[status as keyof typeof variants] as any}
-        className={status === "pending" ? "bg-warning text-warning-foreground" : ""}
+        variant="outline"
+        style={styles[status as keyof typeof styles]}
+        className="border-0"
       >
         {labels[status as keyof typeof labels]}
       </Badge>
@@ -375,26 +378,23 @@ export default function Dashboard() {
   };
 
   const getDeliveryBadge = (status: string) => {
-    const variants = {
-      pending: "secondary",
-      in_transit: "default",
-      delivered: "success",
-    };
     const labels = {
       pending: "Por entregar",
       in_transit: "En camino",
       delivered: "✓ Entregado",
     };
+    
+    const styles = {
+      pending: { backgroundColor: "hsl(45, 100%, 51%)", color: "white" },
+      in_transit: { backgroundColor: "hsl(262, 52%, 51%)", color: "white" },
+      delivered: { backgroundColor: "hsl(162, 73%, 46%)", color: "white" },
+    };
+    
     return (
       <Badge 
-        variant={variants[status as keyof typeof variants] as any}
-        className={
-          status === "pending" 
-            ? "bg-secondary text-secondary-foreground" 
-            : status === "in_transit"
-            ? "bg-primary/20 text-primary"
-            : ""
-        }
+        variant="outline"
+        style={styles[status as keyof typeof styles]}
+        className="border-0"
       >
         {labels[status as keyof typeof labels]}
       </Badge>

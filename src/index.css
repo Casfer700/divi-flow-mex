@@ -43,6 +43,13 @@ All colors MUST be HSL.
     --warning: 45 93% 47%;
     --warning-foreground: 0 0% 100%;
 
+    /* Order status colors */
+    --status-payment-pending: 4 100% 60%;
+    --status-payment-paid: 134 61% 41%;
+    --status-delivery-pending: 45 100% 51%;
+    --status-delivery-transit: 262 52% 51%;
+    --status-delivery-delivered: 162 73% 46%;
+
     --border: 220 13% 91%;
     --input: 220 13% 91%;
     --ring: 217 91% 60%;

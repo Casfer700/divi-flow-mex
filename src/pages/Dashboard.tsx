@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
@@ -94,7 +95,11 @@ export default function Dashboard() {
     price_type: "retail",
     assigned_to: "",
     delivery_date: undefined as Date | undefined,
+    delivery_notes: "",
   });
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -244,6 +249,7 @@ export default function Dashboard() {
       price_type: formData.price_type,
       assigned_to: formData.assigned_to || null,
       delivery_date: formData.delivery_date?.toISOString() || null,
+      delivery_notes: formData.delivery_notes || null,
       created_by: user?.id,
     }]);
 
@@ -263,6 +269,7 @@ export default function Dashboard() {
       price_type: "retail",
       assigned_to: "",
       delivery_date: undefined,
+      delivery_notes: "",
     });
     fetchOrders();
   };
@@ -317,6 +324,80 @@ export default function Dashboard() {
     toast.success("Entrega actualizada");
     setIsDeliveryDialogOpen(false);
     setSelectedOrder(null);
+    fetchOrders();
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!confirm("¿Estás seguro de eliminar esta orden?")) return;
+    
+    const { error } = await supabase
+      .from("orders")
+      .delete()
+      .eq("id", orderId);
+
+    if (error) {
+      toast.error("Error al eliminar orden");
+      return;
+    }
+
+    toast.success("Orden eliminada");
+    fetchOrders();
+  };
+
+  const openEditDialog = (order: Order) => {
+    setEditingOrder(order);
+    setFormData({
+      customer_id: order.customer_id,
+      usd_amount: order.usd_amount.toString(),
+      eur_amount: order.eur_amount.toString(),
+      cup_amount: order.cup_amount.toString(),
+      total_mxn: order.total_mxn.toString(),
+      price_type: order.price_type,
+      assigned_to: order.assigned_to || "",
+      delivery_date: order.delivery_date ? new Date(order.delivery_date) : undefined,
+      delivery_notes: order.delivery_notes || "",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        customer_id: formData.customer_id,
+        usd_amount: parseFloat(formData.usd_amount) || 0,
+        eur_amount: parseFloat(formData.eur_amount) || 0,
+        cup_amount: parseFloat(formData.cup_amount) || 0,
+        total_mxn: parseFloat(formData.total_mxn),
+        price_type: formData.price_type,
+        assigned_to: formData.assigned_to || null,
+        delivery_date: formData.delivery_date?.toISOString() || null,
+        delivery_notes: formData.delivery_notes || null,
+      })
+      .eq("id", editingOrder.id);
+
+    if (error) {
+      toast.error("Error al actualizar orden");
+      return;
+    }
+
+    toast.success("Orden actualizada");
+    setIsEditDialogOpen(false);
+    setEditingOrder(null);
+    setFormData({ 
+      customer_id: "", 
+      usd_amount: "", 
+      eur_amount: "", 
+      cup_amount: "", 
+      total_mxn: "",
+      price_type: "retail",
+      assigned_to: "",
+      delivery_date: undefined,
+      delivery_notes: "",
+    });
     fetchOrders();
   };
 
@@ -454,22 +535,47 @@ export default function Dashboard() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="customer">Cliente</Label>
-                    <Select
-                      value={formData.customer_id}
-                      onValueChange={(value) => setFormData({ ...formData, customer_id: value })}
-                      required
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar cliente" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover">
-                        {customers.map((customer) => (
-                          <SelectItem key={customer.id} value={customer.id}>
-                            {customer.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={customerSearchOpen} onOpenChange={setCustomerSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={customerSearchOpen}
+                          className="w-full justify-between"
+                        >
+                          {formData.customer_id
+                            ? customers.find((c) => c.id === formData.customer_id)?.name
+                            : "Buscar cliente..."}
+                          <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-full p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Buscar por nombre, dirección o teléfono..." />
+                          <CommandList>
+                            <CommandEmpty>No se encontró ningún cliente.</CommandEmpty>
+                            <CommandGroup>
+                              {customers.map((customer) => (
+                                <CommandItem
+                                  key={customer.id}
+                                  value={`${customer.name} ${customer.address} ${customer.phone_mx}`}
+                                  onSelect={() => {
+                                    setFormData({ ...formData, customer_id: customer.id });
+                                    setCustomerSearchOpen(false);
+                                  }}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{customer.name}</span>
+                                    <span className="text-sm text-muted-foreground">{customer.address}</span>
+                                    <span className="text-sm text-muted-foreground">{customer.phone_mx}</span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   
                   <div className="space-y-2">
@@ -580,6 +686,17 @@ export default function Dashboard() {
                       </PopoverContent>
                     </Popover>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="delivery_notes">Notas (opcional)</Label>
+                    <Textarea
+                      id="delivery_notes"
+                      placeholder="Agregar notas sobre la orden..."
+                      value={formData.delivery_notes}
+                      onChange={(e) => setFormData({ ...formData, delivery_notes: e.target.value })}
+                      rows={3}
+                    />
+                  </div>
                   
                   <Button type="submit" className="w-full">Crear orden</Button>
                 </form>
@@ -620,6 +737,8 @@ export default function Dashboard() {
                       onUpdateStatus={updateOrderStatus}
                       onOpenDeliveryDialog={openDeliveryDialog}
                       onSendWhatsApp={sendWhatsApp}
+                      onEditOrder={openEditDialog}
+                      onDeleteOrder={handleDeleteOrder}
                       getPaymentBadge={getPaymentBadge}
                       getDeliveryBadge={getDeliveryBadge}
                     />
@@ -643,6 +762,8 @@ export default function Dashboard() {
                       onUpdateStatus={updateOrderStatus}
                       onOpenDeliveryDialog={openDeliveryDialog}
                       onSendWhatsApp={sendWhatsApp}
+                      onEditOrder={openEditDialog}
+                      onDeleteOrder={handleDeleteOrder}
                       getPaymentBadge={getPaymentBadge}
                       getDeliveryBadge={getDeliveryBadge}
                     />
@@ -662,6 +783,8 @@ export default function Dashboard() {
                 onUpdateStatus={updateOrderStatus}
                 onOpenDeliveryDialog={openDeliveryDialog}
                 onSendWhatsApp={sendWhatsApp}
+                onEditOrder={openEditDialog}
+                onDeleteOrder={handleDeleteOrder}
                 getPaymentBadge={getPaymentBadge}
                 getDeliveryBadge={getDeliveryBadge}
               />
@@ -752,6 +875,188 @@ export default function Dashboard() {
               Guardar cambios
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog for editing orders */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar orden</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit_customer">Cliente</Label>
+              <Popover open={customerSearchOpen} onOpenChange={setCustomerSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={customerSearchOpen}
+                    className="w-full justify-between"
+                  >
+                    {formData.customer_id
+                      ? customers.find((c) => c.id === formData.customer_id)?.name
+                      : "Buscar cliente..."}
+                    <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Buscar por nombre, dirección o teléfono..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró ningún cliente.</CommandEmpty>
+                      <CommandGroup>
+                        {customers.map((customer) => (
+                          <CommandItem
+                            key={customer.id}
+                            value={`${customer.name} ${customer.address} ${customer.phone_mx}`}
+                            onSelect={() => {
+                              setFormData({ ...formData, customer_id: customer.id });
+                              setCustomerSearchOpen(false);
+                            }}
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-medium">{customer.name}</span>
+                              <span className="text-sm text-muted-foreground">{customer.address}</span>
+                              <span className="text-sm text-muted-foreground">{customer.phone_mx}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit_price_type">Tipo de precio</Label>
+              <Select
+                value={formData.price_type}
+                onValueChange={(value) => setFormData({ ...formData, price_type: value })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="retail">Menudeo</SelectItem>
+                  <SelectItem value="wholesale">Mayoreo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit_usd">USD</Label>
+                <Input
+                  id="edit_usd"
+                  type="number"
+                  step="0.01"
+                  value={formData.usd_amount}
+                  onChange={(e) => setFormData({ ...formData, usd_amount: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_eur">EUR</Label>
+                <Input
+                  id="edit_eur"
+                  type="number"
+                  step="0.01"
+                  value={formData.eur_amount}
+                  onChange={(e) => setFormData({ ...formData, eur_amount: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit_cup">CUP</Label>
+                <Input
+                  id="edit_cup"
+                  type="number"
+                  step="0.01"
+                  value={formData.cup_amount}
+                  onChange={(e) => setFormData({ ...formData, cup_amount: e.target.value })}
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit_total">Total MXN (calculado)</Label>
+              <Input
+                id="edit_total"
+                type="number"
+                step="0.01"
+                value={formData.total_mxn}
+                onChange={(e) => setFormData({ ...formData, total_mxn: e.target.value })}
+                required
+                className="bg-muted"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit_assigned_to">Asignar a</Label>
+              <Select
+                value={formData.assigned_to}
+                onValueChange={(value) => setFormData({ ...formData, assigned_to: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin asignar" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  {users.map((usr) => (
+                    <SelectItem key={usr.id} value={usr.id}>
+                      {usr.full_name} ({usr.role === "local" ? "Local" : "Repartidor"})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Fecha de entrega</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.delivery_date ? (
+                      format(formData.delivery_date, "PPP", { locale: es })
+                    ) : (
+                      <span>Seleccionar fecha</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={formData.delivery_date}
+                    onSelect={(date) => setFormData({ ...formData, delivery_date: date })}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit_delivery_notes">Notas (opcional)</Label>
+              <Textarea
+                id="edit_delivery_notes"
+                placeholder="Agregar notas sobre la orden..."
+                value={formData.delivery_notes}
+                onChange={(e) => setFormData({ ...formData, delivery_notes: e.target.value })}
+                rows={3}
+              />
+            </div>
+            
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Guardar cambios</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </Layout>

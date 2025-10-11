@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, MapPin, DollarSign, User, CalendarIcon } from "lucide-react";
+import { MessageCircle, MapPin, DollarSign, User, CalendarIcon, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -45,6 +45,8 @@ interface OrderCardProps {
   onUpdateStatus: (orderId: string, field: "payment_status" | "delivery_status", value: string) => void;
   onOpenDeliveryDialog: (order: Order) => void;
   onSendWhatsApp: (order: Order) => void;
+  onEditOrder?: (order: Order) => void;
+  onDeleteOrder?: (orderId: string) => void;
   getPaymentBadge: (status: string) => JSX.Element;
   getDeliveryBadge: (status: string) => JSX.Element;
 }
@@ -56,6 +58,8 @@ export function OrderCard({
   onUpdateStatus,
   onOpenDeliveryDialog,
   onSendWhatsApp,
+  onEditOrder,
+  onDeleteOrder,
   getPaymentBadge,
   getDeliveryBadge,
 }: OrderCardProps) {
@@ -174,6 +178,33 @@ export function OrderCard({
             >
               Actualizar entrega
             </Button>
+          )}
+
+          {(profile?.role === "admin" || profile?.role === "local") && (
+            <>
+              {onEditOrder && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onEditOrder(order)}
+                  className="gap-2"
+                >
+                  <Edit className="h-4 w-4" />
+                  Editar
+                </Button>
+              )}
+              {onDeleteOrder && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onDeleteOrder(order.id)}
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Eliminar
+                </Button>
+              )}
+            </>
           )}
         </div>
       </CardContent>

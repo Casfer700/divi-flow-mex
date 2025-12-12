@@ -229,9 +229,12 @@ export default function Dashboard() {
       if (rate) total += parseFloat(formData.eur_amount) * rate.sell_rate;
     }
 
+    // CUP: dividir en lugar de multiplicar
     if (formData.cup_amount) {
       const rate = rates.find(r => r.currency === "CUP" && r.rate_type === rateType);
-      if (rate) total += parseFloat(formData.cup_amount) * rate.sell_rate;
+      if (rate && rate.sell_rate > 0) {
+        total += parseFloat(formData.cup_amount) / rate.sell_rate;
+      }
     }
 
     setFormData(prev => ({ ...prev, total_mxn: total.toFixed(2) }));
@@ -240,22 +243,77 @@ export default function Dashboard() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const { error } = await supabase.from("orders").insert([{
+    const usdAmount = parseFloat(formData.usd_amount) || 0;
+    const eurAmount = parseFloat(formData.eur_amount) || 0;
+    const cupAmount = parseFloat(formData.cup_amount) || 0;
+
+    // Insert the order
+    const { data: orderData, error } = await supabase.from("orders").insert([{
       customer_id: formData.customer_id,
-      usd_amount: parseFloat(formData.usd_amount) || 0,
-      eur_amount: parseFloat(formData.eur_amount) || 0,
-      cup_amount: parseFloat(formData.cup_amount) || 0,
+      usd_amount: usdAmount,
+      eur_amount: eurAmount,
+      cup_amount: cupAmount,
       total_mxn: parseFloat(formData.total_mxn),
       price_type: formData.price_type,
       assigned_to: formData.assigned_to || null,
       delivery_date: formData.delivery_date?.toISOString() || null,
       delivery_notes: formData.delivery_notes || null,
       created_by: user?.id,
-    }]);
+    }]).select().single();
 
     if (error) {
       toast.error("Error al crear orden");
       return;
+    }
+
+    // Deduct from inventory (out movements)
+    const inventoryMovements = [];
+    
+    if (usdAmount > 0) {
+      inventoryMovements.push({
+        currency: "USD",
+        amount: usdAmount,
+        movement_type: "out",
+        notes: `Venta orden #${orderData.id.slice(0, 8)}`,
+        reference_id: orderData.id,
+        reference_type: "order",
+        created_by: user?.id,
+      });
+    }
+
+    if (eurAmount > 0) {
+      inventoryMovements.push({
+        currency: "EUR",
+        amount: eurAmount,
+        movement_type: "out",
+        notes: `Venta orden #${orderData.id.slice(0, 8)}`,
+        reference_id: orderData.id,
+        reference_type: "order",
+        created_by: user?.id,
+      });
+    }
+
+    if (cupAmount > 0) {
+      inventoryMovements.push({
+        currency: "CUP",
+        amount: cupAmount,
+        movement_type: "out",
+        notes: `Venta orden #${orderData.id.slice(0, 8)}`,
+        reference_id: orderData.id,
+        reference_type: "order",
+        created_by: user?.id,
+      });
+    }
+
+    if (inventoryMovements.length > 0) {
+      const { error: invError } = await supabase
+        .from("inventory_movements")
+        .insert(inventoryMovements);
+      
+      if (invError) {
+        console.error("Error registering inventory movement:", invError);
+        toast.warning("Orden creada pero hubo un error al actualizar inventario");
+      }
     }
 
     toast.success("Orden creada");

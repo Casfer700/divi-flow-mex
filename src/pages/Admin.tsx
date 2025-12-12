@@ -6,6 +6,7 @@ import { ExchangeRatesManager } from "@/components/admin/ExchangeRatesManager";
 import { InventoryManager } from "@/components/admin/InventoryManager";
 import { WhatsAppTemplatesManager } from "@/components/admin/WhatsAppTemplatesManager";
 import { ReportsManager } from "@/components/admin/ReportsManager";
+import { DailyCashRegister } from "@/components/admin/DailyCashRegister";
 
 export default function Admin() {
   const { profile } = useAuth();
@@ -25,6 +26,7 @@ export default function Admin() {
     <Layout>
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">Administración</h1>
+        <DailyCashRegister />
         <ExchangeRatesManager />
         <InventoryManager />
         <WhatsAppTemplatesManager />

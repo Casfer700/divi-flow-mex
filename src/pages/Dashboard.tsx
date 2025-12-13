@@ -286,15 +286,15 @@ export default function Dashboard() {
     const eurAmount = parseFloat(formData.eur_amount) || 0;
     const cupAmount = parseFloat(formData.cup_amount) || 0;
 
-    // Validate stock before creating order
+    // Validate stock before creating order (stock will be deducted when delivered)
     const stockCheck = await validateStock(usdAmount, eurAmount, cupAmount);
     if (!stockCheck.valid) {
       toast.error(stockCheck.message || "Stock insuficiente");
       return;
     }
 
-    // Insert the order
-    const { data: orderData, error } = await supabase.from("orders").insert([{
+    // Insert the order - inventory deduction happens when marked as delivered
+    const { error } = await supabase.from("orders").insert([{
       customer_id: formData.customer_id,
       usd_amount: usdAmount,
       eur_amount: eurAmount,
@@ -305,61 +305,11 @@ export default function Dashboard() {
       delivery_date: formData.delivery_date?.toISOString() || null,
       delivery_notes: formData.delivery_notes || null,
       created_by: user?.id,
-    }]).select().single();
+    }]);
 
     if (error) {
       toast.error("Error al crear orden");
       return;
-    }
-
-    // Deduct from inventory (out movements)
-    const inventoryMovements = [];
-    
-    if (usdAmount > 0) {
-      inventoryMovements.push({
-        currency: "USD",
-        amount: usdAmount,
-        movement_type: "out",
-        notes: `Venta orden #${orderData.id.slice(0, 8)}`,
-        reference_id: orderData.id,
-        reference_type: "order",
-        created_by: user?.id,
-      });
-    }
-
-    if (eurAmount > 0) {
-      inventoryMovements.push({
-        currency: "EUR",
-        amount: eurAmount,
-        movement_type: "out",
-        notes: `Venta orden #${orderData.id.slice(0, 8)}`,
-        reference_id: orderData.id,
-        reference_type: "order",
-        created_by: user?.id,
-      });
-    }
-
-    if (cupAmount > 0) {
-      inventoryMovements.push({
-        currency: "CUP",
-        amount: cupAmount,
-        movement_type: "out",
-        notes: `Venta orden #${orderData.id.slice(0, 8)}`,
-        reference_id: orderData.id,
-        reference_type: "order",
-        created_by: user?.id,
-      });
-    }
-
-    if (inventoryMovements.length > 0) {
-      const { error: invError } = await supabase
-        .from("inventory_movements")
-        .insert(inventoryMovements);
-      
-      if (invError) {
-        console.error("Error registering inventory movement:", invError);
-        toast.warning("Orden creada pero hubo un error al actualizar inventario");
-      }
     }
 
     toast.success("Orden creada");
@@ -383,6 +333,20 @@ export default function Dashboard() {
     field: "payment_status" | "delivery_status",
     value: string
   ) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const previousDeliveryStatus = order.delivery_status;
+
+    // If changing delivery status to "delivered", validate and deduct stock
+    if (field === "delivery_status" && value === "delivered" && previousDeliveryStatus !== "delivered") {
+      const stockCheck = await validateStock(order.usd_amount, order.eur_amount, order.cup_amount);
+      if (!stockCheck.valid) {
+        toast.error(stockCheck.message || "Stock insuficiente para marcar como entregada");
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("orders")
       .update({ [field]: value })
@@ -391,6 +355,110 @@ export default function Dashboard() {
     if (error) {
       toast.error("Error al actualizar estado");
       return;
+    }
+
+    // Deduct from inventory when marked as delivered
+    if (field === "delivery_status" && value === "delivered" && previousDeliveryStatus !== "delivered") {
+      const inventoryMovements = [];
+      
+      if (order.usd_amount > 0) {
+        inventoryMovements.push({
+          currency: "USD",
+          amount: order.usd_amount,
+          movement_type: "out",
+          notes: `Entrega orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order",
+          created_by: user?.id,
+        });
+      }
+
+      if (order.eur_amount > 0) {
+        inventoryMovements.push({
+          currency: "EUR",
+          amount: order.eur_amount,
+          movement_type: "out",
+          notes: `Entrega orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order",
+          created_by: user?.id,
+        });
+      }
+
+      if (order.cup_amount > 0) {
+        inventoryMovements.push({
+          currency: "CUP",
+          amount: order.cup_amount,
+          movement_type: "out",
+          notes: `Entrega orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order",
+          created_by: user?.id,
+        });
+      }
+
+      if (inventoryMovements.length > 0) {
+        const { error: invError } = await supabase
+          .from("inventory_movements")
+          .insert(inventoryMovements);
+        
+        if (invError) {
+          console.error("Error deducting inventory:", invError);
+          toast.warning("Estado actualizado pero hubo un error al descontar inventario");
+        }
+      }
+    }
+
+    // Revert inventory if changing FROM delivered to another status
+    if (field === "delivery_status" && previousDeliveryStatus === "delivered" && value !== "delivered") {
+      const inventoryMovements = [];
+      
+      if (order.usd_amount > 0) {
+        inventoryMovements.push({
+          currency: "USD",
+          amount: order.usd_amount,
+          movement_type: "in",
+          notes: `Reversión estado entrega orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (order.eur_amount > 0) {
+        inventoryMovements.push({
+          currency: "EUR",
+          amount: order.eur_amount,
+          movement_type: "in",
+          notes: `Reversión estado entrega orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (order.cup_amount > 0) {
+        inventoryMovements.push({
+          currency: "CUP",
+          amount: order.cup_amount,
+          movement_type: "in",
+          notes: `Reversión estado entrega orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (inventoryMovements.length > 0) {
+        const { error: invError } = await supabase
+          .from("inventory_movements")
+          .insert(inventoryMovements);
+        
+        if (invError) {
+          console.error("Error reverting inventory:", invError);
+          toast.warning("Estado actualizado pero hubo un error al revertir inventario");
+        }
+      }
     }
 
     toast.success("Estado actualizado");
@@ -452,57 +520,61 @@ export default function Dashboard() {
       return;
     }
 
-    // Revert inventory movements - add back the currencies
-    const inventoryMovements = [];
-    
-    if (orderToDelete.usd_amount > 0) {
-      inventoryMovements.push({
-        currency: "USD",
-        amount: orderToDelete.usd_amount,
-        movement_type: "in",
-        notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
-        reference_id: orderId,
-        reference_type: "order_reversal",
-        created_by: user?.id,
-      });
-    }
-
-    if (orderToDelete.eur_amount > 0) {
-      inventoryMovements.push({
-        currency: "EUR",
-        amount: orderToDelete.eur_amount,
-        movement_type: "in",
-        notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
-        reference_id: orderId,
-        reference_type: "order_reversal",
-        created_by: user?.id,
-      });
-    }
-
-    if (orderToDelete.cup_amount > 0) {
-      inventoryMovements.push({
-        currency: "CUP",
-        amount: orderToDelete.cup_amount,
-        movement_type: "in",
-        notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
-        reference_id: orderId,
-        reference_type: "order_reversal",
-        created_by: user?.id,
-      });
-    }
-
-    if (inventoryMovements.length > 0) {
-      const { error: invError } = await supabase
-        .from("inventory_movements")
-        .insert(inventoryMovements);
+    // Only revert inventory if order was already delivered (stock was deducted)
+    if (orderToDelete.delivery_status === "delivered") {
+      const inventoryMovements = [];
       
-      if (invError) {
-        console.error("Error reverting inventory:", invError);
-        toast.warning("Orden eliminada pero hubo un error al revertir inventario");
+      if (orderToDelete.usd_amount > 0) {
+        inventoryMovements.push({
+          currency: "USD",
+          amount: orderToDelete.usd_amount,
+          movement_type: "in",
+          notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
       }
-    }
 
-    toast.success("Orden eliminada e inventario revertido");
+      if (orderToDelete.eur_amount > 0) {
+        inventoryMovements.push({
+          currency: "EUR",
+          amount: orderToDelete.eur_amount,
+          movement_type: "in",
+          notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (orderToDelete.cup_amount > 0) {
+        inventoryMovements.push({
+          currency: "CUP",
+          amount: orderToDelete.cup_amount,
+          movement_type: "in",
+          notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
+          reference_id: orderId,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (inventoryMovements.length > 0) {
+        const { error: invError } = await supabase
+          .from("inventory_movements")
+          .insert(inventoryMovements);
+        
+        if (invError) {
+          console.error("Error reverting inventory:", invError);
+          toast.warning("Orden eliminada pero hubo un error al revertir inventario");
+        }
+      }
+      toast.success("Orden eliminada e inventario revertido");
+    } else {
+      toast.success("Orden eliminada");
+    }
+    
     fetchOrders();
   };
 
@@ -535,8 +607,8 @@ export default function Dashboard() {
     const eurDiff = newEur - editingOrder.eur_amount;
     const cupDiff = newCup - editingOrder.cup_amount;
 
-    // Validate stock only if amounts increased
-    if (usdDiff > 0 || eurDiff > 0 || cupDiff > 0) {
+    // Only validate/adjust stock if order is already delivered
+    if (editingOrder.delivery_status === "delivered" && (usdDiff > 0 || eurDiff > 0 || cupDiff > 0)) {
       const stockCheck = await validateStock(
         usdDiff > 0 ? usdDiff : 0,
         eurDiff > 0 ? eurDiff : 0,
@@ -568,53 +640,55 @@ export default function Dashboard() {
       return;
     }
 
-    // Adjust inventory based on differences
-    const inventoryMovements = [];
+    // Only adjust inventory if order was already delivered
+    if (editingOrder.delivery_status === "delivered") {
+      const inventoryMovements = [];
 
-    if (usdDiff !== 0) {
-      inventoryMovements.push({
-        currency: "USD",
-        amount: Math.abs(usdDiff),
-        movement_type: usdDiff > 0 ? "out" : "in",
-        notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
-        reference_id: editingOrder.id,
-        reference_type: "order_adjustment",
-        created_by: user?.id,
-      });
-    }
+      if (usdDiff !== 0) {
+        inventoryMovements.push({
+          currency: "USD",
+          amount: Math.abs(usdDiff),
+          movement_type: usdDiff > 0 ? "out" : "in",
+          notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
+          reference_id: editingOrder.id,
+          reference_type: "order_adjustment",
+          created_by: user?.id,
+        });
+      }
 
-    if (eurDiff !== 0) {
-      inventoryMovements.push({
-        currency: "EUR",
-        amount: Math.abs(eurDiff),
-        movement_type: eurDiff > 0 ? "out" : "in",
-        notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
-        reference_id: editingOrder.id,
-        reference_type: "order_adjustment",
-        created_by: user?.id,
-      });
-    }
+      if (eurDiff !== 0) {
+        inventoryMovements.push({
+          currency: "EUR",
+          amount: Math.abs(eurDiff),
+          movement_type: eurDiff > 0 ? "out" : "in",
+          notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
+          reference_id: editingOrder.id,
+          reference_type: "order_adjustment",
+          created_by: user?.id,
+        });
+      }
 
-    if (cupDiff !== 0) {
-      inventoryMovements.push({
-        currency: "CUP",
-        amount: Math.abs(cupDiff),
-        movement_type: cupDiff > 0 ? "out" : "in",
-        notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
-        reference_id: editingOrder.id,
-        reference_type: "order_adjustment",
-        created_by: user?.id,
-      });
-    }
+      if (cupDiff !== 0) {
+        inventoryMovements.push({
+          currency: "CUP",
+          amount: Math.abs(cupDiff),
+          movement_type: cupDiff > 0 ? "out" : "in",
+          notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
+          reference_id: editingOrder.id,
+          reference_type: "order_adjustment",
+          created_by: user?.id,
+        });
+      }
 
-    if (inventoryMovements.length > 0) {
-      const { error: invError } = await supabase
-        .from("inventory_movements")
-        .insert(inventoryMovements);
-      
-      if (invError) {
-        console.error("Error adjusting inventory:", invError);
-        toast.warning("Orden actualizada pero hubo un error al ajustar inventario");
+      if (inventoryMovements.length > 0) {
+        const { error: invError } = await supabase
+          .from("inventory_movements")
+          .insert(inventoryMovements);
+        
+        if (invError) {
+          console.error("Error adjusting inventory:", invError);
+          toast.warning("Orden actualizada pero hubo un error al ajustar inventario");
+        }
       }
     }
 

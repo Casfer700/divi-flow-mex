@@ -240,12 +240,58 @@ export default function Dashboard() {
     setFormData(prev => ({ ...prev, total_mxn: total.toFixed(2) }));
   };
 
+  const validateStock = async (usd: number, eur: number, cup: number): Promise<{ valid: boolean; message?: string }> => {
+    // Fetch current inventory balances
+    const { data: movements, error } = await supabase
+      .from("inventory_movements")
+      .select("currency, amount, movement_type");
+
+    if (error) {
+      console.error("Error fetching inventory:", error);
+      return { valid: false, message: "Error al verificar inventario" };
+    }
+
+    const balances: Record<string, number> = { USD: 0, EUR: 0, CUP: 0 };
+    
+    (movements || []).forEach((m) => {
+      if (m.movement_type === "in" || m.movement_type === "adjustment") {
+        balances[m.currency] = (balances[m.currency] || 0) + Number(m.amount);
+      } else if (m.movement_type === "out") {
+        balances[m.currency] = (balances[m.currency] || 0) - Number(m.amount);
+      }
+    });
+
+    const errors: string[] = [];
+    if (usd > 0 && usd > balances.USD) {
+      errors.push(`USD: disponible $${balances.USD.toFixed(2)}, solicitado $${usd.toFixed(2)}`);
+    }
+    if (eur > 0 && eur > balances.EUR) {
+      errors.push(`EUR: disponible €${balances.EUR.toFixed(2)}, solicitado €${eur.toFixed(2)}`);
+    }
+    if (cup > 0 && cup > balances.CUP) {
+      errors.push(`CUP: disponible $${balances.CUP.toFixed(2)}, solicitado $${cup.toFixed(2)}`);
+    }
+
+    if (errors.length > 0) {
+      return { valid: false, message: `Stock insuficiente:\n${errors.join("\n")}` };
+    }
+
+    return { valid: true };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const usdAmount = parseFloat(formData.usd_amount) || 0;
     const eurAmount = parseFloat(formData.eur_amount) || 0;
     const cupAmount = parseFloat(formData.cup_amount) || 0;
+
+    // Validate stock before creating order
+    const stockCheck = await validateStock(usdAmount, eurAmount, cupAmount);
+    if (!stockCheck.valid) {
+      toast.error(stockCheck.message || "Stock insuficiente");
+      return;
+    }
 
     // Insert the order
     const { data: orderData, error } = await supabase.from("orders").insert([{
@@ -388,6 +434,14 @@ export default function Dashboard() {
   const handleDeleteOrder = async (orderId: string) => {
     if (!confirm("¿Estás seguro de eliminar esta orden?")) return;
     
+    // Find the order to get amounts for inventory reversion
+    const orderToDelete = orders.find(o => o.id === orderId);
+    if (!orderToDelete) {
+      toast.error("Orden no encontrada");
+      return;
+    }
+
+    // Delete the order first
     const { error } = await supabase
       .from("orders")
       .delete()
@@ -398,7 +452,57 @@ export default function Dashboard() {
       return;
     }
 
-    toast.success("Orden eliminada");
+    // Revert inventory movements - add back the currencies
+    const inventoryMovements = [];
+    
+    if (orderToDelete.usd_amount > 0) {
+      inventoryMovements.push({
+        currency: "USD",
+        amount: orderToDelete.usd_amount,
+        movement_type: "in",
+        notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
+        reference_id: orderId,
+        reference_type: "order_reversal",
+        created_by: user?.id,
+      });
+    }
+
+    if (orderToDelete.eur_amount > 0) {
+      inventoryMovements.push({
+        currency: "EUR",
+        amount: orderToDelete.eur_amount,
+        movement_type: "in",
+        notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
+        reference_id: orderId,
+        reference_type: "order_reversal",
+        created_by: user?.id,
+      });
+    }
+
+    if (orderToDelete.cup_amount > 0) {
+      inventoryMovements.push({
+        currency: "CUP",
+        amount: orderToDelete.cup_amount,
+        movement_type: "in",
+        notes: `Reversión por eliminación de orden #${orderId.slice(0, 8)}`,
+        reference_id: orderId,
+        reference_type: "order_reversal",
+        created_by: user?.id,
+      });
+    }
+
+    if (inventoryMovements.length > 0) {
+      const { error: invError } = await supabase
+        .from("inventory_movements")
+        .insert(inventoryMovements);
+      
+      if (invError) {
+        console.error("Error reverting inventory:", invError);
+        toast.warning("Orden eliminada pero hubo un error al revertir inventario");
+      }
+    }
+
+    toast.success("Orden eliminada e inventario revertido");
     fetchOrders();
   };
 
@@ -422,13 +526,35 @@ export default function Dashboard() {
     e.preventDefault();
     if (!editingOrder) return;
 
+    const newUsd = parseFloat(formData.usd_amount) || 0;
+    const newEur = parseFloat(formData.eur_amount) || 0;
+    const newCup = parseFloat(formData.cup_amount) || 0;
+
+    // Calculate differences
+    const usdDiff = newUsd - editingOrder.usd_amount;
+    const eurDiff = newEur - editingOrder.eur_amount;
+    const cupDiff = newCup - editingOrder.cup_amount;
+
+    // Validate stock only if amounts increased
+    if (usdDiff > 0 || eurDiff > 0 || cupDiff > 0) {
+      const stockCheck = await validateStock(
+        usdDiff > 0 ? usdDiff : 0,
+        eurDiff > 0 ? eurDiff : 0,
+        cupDiff > 0 ? cupDiff : 0
+      );
+      if (!stockCheck.valid) {
+        toast.error(stockCheck.message || "Stock insuficiente para el incremento");
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("orders")
       .update({
         customer_id: formData.customer_id,
-        usd_amount: parseFloat(formData.usd_amount) || 0,
-        eur_amount: parseFloat(formData.eur_amount) || 0,
-        cup_amount: parseFloat(formData.cup_amount) || 0,
+        usd_amount: newUsd,
+        eur_amount: newEur,
+        cup_amount: newCup,
         total_mxn: parseFloat(formData.total_mxn),
         price_type: formData.price_type,
         assigned_to: formData.assigned_to || null,
@@ -440,6 +566,56 @@ export default function Dashboard() {
     if (error) {
       toast.error("Error al actualizar orden");
       return;
+    }
+
+    // Adjust inventory based on differences
+    const inventoryMovements = [];
+
+    if (usdDiff !== 0) {
+      inventoryMovements.push({
+        currency: "USD",
+        amount: Math.abs(usdDiff),
+        movement_type: usdDiff > 0 ? "out" : "in",
+        notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
+        reference_id: editingOrder.id,
+        reference_type: "order_adjustment",
+        created_by: user?.id,
+      });
+    }
+
+    if (eurDiff !== 0) {
+      inventoryMovements.push({
+        currency: "EUR",
+        amount: Math.abs(eurDiff),
+        movement_type: eurDiff > 0 ? "out" : "in",
+        notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
+        reference_id: editingOrder.id,
+        reference_type: "order_adjustment",
+        created_by: user?.id,
+      });
+    }
+
+    if (cupDiff !== 0) {
+      inventoryMovements.push({
+        currency: "CUP",
+        amount: Math.abs(cupDiff),
+        movement_type: cupDiff > 0 ? "out" : "in",
+        notes: `Ajuste por modificación de orden #${editingOrder.id.slice(0, 8)}`,
+        reference_id: editingOrder.id,
+        reference_type: "order_adjustment",
+        created_by: user?.id,
+      });
+    }
+
+    if (inventoryMovements.length > 0) {
+      const { error: invError } = await supabase
+        .from("inventory_movements")
+        .insert(inventoryMovements);
+      
+      if (invError) {
+        console.error("Error adjusting inventory:", invError);
+        toast.warning("Orden actualizada pero hubo un error al ajustar inventario");
+      }
     }
 
     toast.success("Orden actualizada");
@@ -649,6 +825,7 @@ export default function Dashboard() {
                       <SelectContent className="bg-popover">
                         <SelectItem value="retail">Menudeo</SelectItem>
                         <SelectItem value="wholesale">Mayoreo</SelectItem>
+                        <SelectItem value="individual">Individual</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

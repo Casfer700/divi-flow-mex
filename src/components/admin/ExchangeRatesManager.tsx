@@ -67,7 +67,12 @@ export function ExchangeRatesManager() {
   };
 
   const getRateLabel = (type: string) => {
-    return type === "wholesale" ? "Mayoreo" : "Menudeo";
+    const labels: Record<string, string> = {
+      wholesale: "Mayoreo",
+      retail: "Menudeo",
+      individual: "Individual",
+    };
+    return labels[type] || type;
   };
 
   return (

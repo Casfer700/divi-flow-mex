@@ -478,10 +478,22 @@ export default function Dashboard() {
   const handleDeliveryUpdate = async () => {
     if (!selectedOrder) return;
 
+    const previousDeliveryStatus = selectedOrder.delivery_status;
+    const newDeliveryStatus = deliveryFormData.delivery_status;
+
+    // If changing to "delivered", validate and deduct stock
+    if (newDeliveryStatus === "delivered" && previousDeliveryStatus !== "delivered") {
+      const stockCheck = await validateStock(selectedOrder.usd_amount, selectedOrder.eur_amount, selectedOrder.cup_amount);
+      if (!stockCheck.valid) {
+        toast.error(stockCheck.message || "Stock insuficiente para marcar como entregada");
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from("orders")
       .update({
-        delivery_status: deliveryFormData.delivery_status,
+        delivery_status: newDeliveryStatus,
         delivery_notes: deliveryFormData.delivery_notes,
         delivery_date: deliveryFormData.delivery_date?.toISOString() || null,
       })
@@ -491,6 +503,110 @@ export default function Dashboard() {
       toast.error("Error al actualizar entrega");
       console.error("Error updating delivery:", error);
       return;
+    }
+
+    // Deduct from inventory when marked as delivered
+    if (newDeliveryStatus === "delivered" && previousDeliveryStatus !== "delivered") {
+      const inventoryMovements = [];
+      
+      if (selectedOrder.usd_amount > 0) {
+        inventoryMovements.push({
+          currency: "USD",
+          amount: selectedOrder.usd_amount,
+          movement_type: "out",
+          notes: `Entrega orden #${selectedOrder.id.slice(0, 8)}`,
+          reference_id: selectedOrder.id,
+          reference_type: "order",
+          created_by: user?.id,
+        });
+      }
+
+      if (selectedOrder.eur_amount > 0) {
+        inventoryMovements.push({
+          currency: "EUR",
+          amount: selectedOrder.eur_amount,
+          movement_type: "out",
+          notes: `Entrega orden #${selectedOrder.id.slice(0, 8)}`,
+          reference_id: selectedOrder.id,
+          reference_type: "order",
+          created_by: user?.id,
+        });
+      }
+
+      if (selectedOrder.cup_amount > 0) {
+        inventoryMovements.push({
+          currency: "CUP",
+          amount: selectedOrder.cup_amount,
+          movement_type: "out",
+          notes: `Entrega orden #${selectedOrder.id.slice(0, 8)}`,
+          reference_id: selectedOrder.id,
+          reference_type: "order",
+          created_by: user?.id,
+        });
+      }
+
+      if (inventoryMovements.length > 0) {
+        const { error: invError } = await supabase
+          .from("inventory_movements")
+          .insert(inventoryMovements);
+        
+        if (invError) {
+          console.error("Error deducting inventory:", invError);
+          toast.warning("Estado actualizado pero hubo un error al descontar inventario");
+        }
+      }
+    }
+
+    // Revert inventory if changing FROM delivered to another status
+    if (previousDeliveryStatus === "delivered" && newDeliveryStatus !== "delivered") {
+      const inventoryMovements = [];
+      
+      if (selectedOrder.usd_amount > 0) {
+        inventoryMovements.push({
+          currency: "USD",
+          amount: selectedOrder.usd_amount,
+          movement_type: "in",
+          notes: `Reversión estado entrega orden #${selectedOrder.id.slice(0, 8)}`,
+          reference_id: selectedOrder.id,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (selectedOrder.eur_amount > 0) {
+        inventoryMovements.push({
+          currency: "EUR",
+          amount: selectedOrder.eur_amount,
+          movement_type: "in",
+          notes: `Reversión estado entrega orden #${selectedOrder.id.slice(0, 8)}`,
+          reference_id: selectedOrder.id,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (selectedOrder.cup_amount > 0) {
+        inventoryMovements.push({
+          currency: "CUP",
+          amount: selectedOrder.cup_amount,
+          movement_type: "in",
+          notes: `Reversión estado entrega orden #${selectedOrder.id.slice(0, 8)}`,
+          reference_id: selectedOrder.id,
+          reference_type: "order_reversal",
+          created_by: user?.id,
+        });
+      }
+
+      if (inventoryMovements.length > 0) {
+        const { error: invError } = await supabase
+          .from("inventory_movements")
+          .insert(inventoryMovements);
+        
+        if (invError) {
+          console.error("Error reverting inventory:", invError);
+          toast.warning("Estado actualizado pero hubo un error al revertir inventario");
+        }
+      }
     }
 
     toast.success("Entrega actualizada");

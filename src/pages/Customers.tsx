@@ -4,11 +4,10 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Search, Plus, Phone, MapPin, Edit, Trash2 } from "lucide-react";
+import { Search, Plus, Phone, MapPin, Edit, Trash2, MessageCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface Customer {
@@ -27,56 +26,28 @@ export default function Customers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState({
-    name: "",
-    phone_mx: "",
-    phone_cu: "",
-    address: "",
-    notes: "",
+    name: "", phone_mx: "", phone_cu: "", address: "", notes: "",
   });
 
-  useEffect(() => {
-    fetchCustomers();
-  }, []);
+  useEffect(() => { fetchCustomers(); }, []);
 
   const fetchCustomers = async () => {
-    const { data, error } = await supabase
-      .from("customers")
-      .select("*")
-      .order("name");
-
-    if (error) {
-      toast.error("Error al cargar clientes");
-      return;
-    }
+    const { data, error } = await supabase.from("customers").select("*").order("name");
+    if (error) { toast.error("Error al cargar clientes"); return; }
     setCustomers(data || []);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (editingCustomer) {
-      const { error } = await supabase
-        .from("customers")
-        .update(formData)
-        .eq("id", editingCustomer.id);
-
-      if (error) {
-        toast.error("Error al actualizar cliente");
-        return;
-      }
+      const { error } = await supabase.from("customers").update(formData).eq("id", editingCustomer.id);
+      if (error) { toast.error("Error al actualizar cliente"); return; }
       toast.success("Cliente actualizado");
     } else {
-      const { error } = await supabase
-        .from("customers")
-        .insert([{ ...formData, created_by: user?.id }]);
-
-      if (error) {
-        toast.error("Error al crear cliente");
-        return;
-      }
+      const { error } = await supabase.from("customers").insert([{ ...formData, created_by: user?.id }]);
+      if (error) { toast.error("Error al crear cliente"); return; }
       toast.success("Cliente creado");
     }
-
     setIsDialogOpen(false);
     setEditingCustomer(null);
     setFormData({ name: "", phone_mx: "", phone_cu: "", address: "", notes: "" });
@@ -85,173 +56,159 @@ export default function Customers() {
 
   const handleEdit = (customer: Customer) => {
     setEditingCustomer(customer);
-    setFormData({
-      name: customer.name,
-      phone_mx: customer.phone_mx,
-      phone_cu: customer.phone_cu || "",
-      address: customer.address,
-      notes: customer.notes || "",
-    });
+    setFormData({ name: customer.name, phone_mx: customer.phone_mx, phone_cu: customer.phone_cu || "", address: customer.address, notes: customer.notes || "" });
     setIsDialogOpen(true);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar este cliente?")) return;
-
     const { error } = await supabase.from("customers").delete().eq("id", id);
-
-    if (error) {
-      toast.error("Error al eliminar cliente");
-      return;
-    }
+    if (error) { toast.error("Error al eliminar cliente"); return; }
     toast.success("Cliente eliminado");
     fetchCustomers();
   };
 
-  const filteredCustomers = customers.filter((customer) =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.phone_mx.includes(searchTerm) ||
-    customer.phone_cu?.includes(searchTerm) ||
-    customer.address.toLowerCase().includes(searchTerm.toLowerCase())
+  const openWhatsApp = (phone: string) => {
+    const clean = phone.replace(/\D/g, "");
+    window.open(`https://wa.me/${clean}`, "_blank");
+  };
+
+  const callPhone = (phone: string) => {
+    window.open(`tel:${phone}`, "_self");
+  };
+
+  const filteredCustomers = customers.filter((c) =>
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.phone_mx.includes(searchTerm) ||
+    c.phone_cu?.includes(searchTerm) ||
+    c.address.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-3xl font-bold">Clientes</h1>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => {
-                setEditingCustomer(null);
-                setFormData({ name: "", phone_mx: "", phone_cu: "", address: "", notes: "" });
-              }}>
-                <Plus className="h-4 w-4 mr-2" />
-                Nuevo cliente
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingCustomer ? "Editar cliente" : "Nuevo cliente"}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nombre completo</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone_mx">Teléfono México</Label>
-                  <Input
-                    id="phone_mx"
-                    value={formData.phone_mx}
-                    onChange={(e) => setFormData({ ...formData, phone_mx: e.target.value })}
-                    placeholder="+52 1234567890"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone_cu">Teléfono Cuba</Label>
-                  <Input
-                    id="phone_cu"
-                    value={formData.phone_cu}
-                    onChange={(e) => setFormData({ ...formData, phone_cu: e.target.value })}
-                    placeholder="+53 12345678"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="address">Dirección</Label>
-                  <Textarea
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notas</Label>
-                  <Textarea
-                    id="notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  {editingCustomer ? "Actualizar" : "Crear"}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Clientes</h1>
+          <Button
+            onClick={() => { setEditingCustomer(null); setFormData({ name: "", phone_mx: "", phone_cu: "", address: "", notes: "" }); setIsDialogOpen(true); }}
+            size="sm" className="h-10 rounded-xl gap-1.5 font-semibold"
+          >
+            <Plus className="h-4 w-4" />
+            Nuevo
+          </Button>
         </div>
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nombre, teléfono o dirección..."
+            placeholder="Buscar cliente..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            className="pl-10 h-12 rounded-xl bg-card border-0 shadow-fintech-sm"
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-3">
           {filteredCustomers.map((customer) => (
-            <Card key={customer.id}>
-              <CardHeader>
-                <CardTitle className="text-lg">{customer.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-start gap-2 text-sm">
-                  <Phone className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                  <div className="space-y-1">
-                    <p>MX: {customer.phone_mx}</p>
-                    {customer.phone_cu && <p>CU: {customer.phone_cu}</p>}
+            <div key={customer.id} className="bg-card rounded-2xl shadow-fintech-md p-4 space-y-3 animate-fade-in">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-base">{customer.name}</h3>
+                  <div className="flex items-center gap-1 mt-1">
+                    <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground truncate">{customer.address}</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                  <p className="text-muted-foreground">{customer.address}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm">MX: {customer.phone_mx}</span>
                 </div>
-                {customer.notes && (
-                  <p className="text-sm text-muted-foreground italic">{customer.notes}</p>
+                {customer.phone_cu && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-sm">CU: {customer.phone_cu}</span>
+                  </div>
                 )}
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEdit(customer)}
-                    className="flex-1"
-                  >
-                    <Edit className="h-3 w-3 mr-1" />
-                    Editar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(customer.id)}
-                    className="flex-1"
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    Eliminar
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+
+              {customer.notes && (
+                <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2 italic">{customer.notes}</p>
+              )}
+
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => callPhone(customer.phone_mx)}
+                  className="flex-1 h-10 rounded-xl gap-1 text-xs font-medium">
+                  <Phone className="h-3.5 w-3.5" />
+                  Llamar
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openWhatsApp(customer.phone_mx)}
+                  className="flex-1 h-10 rounded-xl gap-1 text-xs font-medium">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  WhatsApp
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleEdit(customer)}
+                  className="h-10 w-10 rounded-xl p-0">
+                  <Edit className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handleDelete(customer.id)}
+                  className="h-10 w-10 rounded-xl p-0 text-destructive hover:text-destructive">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
           ))}
         </div>
 
         {filteredCustomers.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            {searchTerm ? "No se encontraron clientes" : "No hay clientes registrados"}
+          <div className="text-center py-16 text-muted-foreground text-sm">
+            {searchTerm ? "Sin resultados" : "No hay clientes registrados"}
           </div>
         )}
       </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">
+              {editingCustomer ? "Editar cliente" : "Nuevo cliente"}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {[
+              { id: "name", label: "Nombre completo", value: formData.name, required: true },
+              { id: "phone_mx", label: "Teléfono México", value: formData.phone_mx, required: true, placeholder: "+52 1234567890" },
+              { id: "phone_cu", label: "Teléfono Cuba", value: formData.phone_cu, placeholder: "+53 12345678" },
+            ].map(field => (
+              <div key={field.id} className="space-y-1">
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{field.label}</Label>
+                <Input
+                  value={field.value}
+                  onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+                  required={field.required}
+                  placeholder={field.placeholder}
+                  className="h-12 rounded-xl bg-secondary/50 border-0"
+                />
+              </div>
+            ))}
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Dirección</Label>
+              <Textarea value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                required className="rounded-xl bg-secondary/50 border-0" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Notas</Label>
+              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                className="rounded-xl bg-secondary/50 border-0" />
+            </div>
+            <Button type="submit" className="w-full h-12 rounded-xl font-semibold">
+              {editingCustomer ? "Actualizar" : "Crear"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

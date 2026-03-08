@@ -1,60 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    /* Clean fintech palette */
-    --background: 0 0% 99%;
-    --foreground: 220 15% 15%;
+    --background: 220 20% 97%;
+    --foreground: 220 20% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 15% 15%;
+    --card-foreground: 220 20% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 15%;
+    --popover-foreground: 220 20% 10%;
 
-    /* Professional blue */
-    --primary: 217 91% 60%;
+    --primary: 220 90% 56%;
     --primary-foreground: 0 0% 100%;
 
-    /* Neutral gray */
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 15% 15%;
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 220 20% 10%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 10% 46%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 10% 50%;
 
-    --accent: 220 14% 96%;
-    --accent-foreground: 220 15% 15%;
+    --accent: 220 14% 94%;
+    --accent-foreground: 220 20% 10%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Success green */
-    --success: 142 71% 45%;
+    --success: 152 69% 41%;
     --success-foreground: 0 0% 100%;
 
-    /* Warning yellow */
-    --warning: 45 93% 47%;
+    --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    /* Order status colors */
-    --status-payment-pending: 4 100% 60%;
-    --status-payment-paid: 134 61% 41%;
-    --status-delivery-pending: 45 100% 51%;
+    --info: 220 90% 56%;
+    --info-foreground: 0 0% 100%;
+
+    /* Currency accent colors */
+    --currency-usd: 152 69% 41%;
+    --currency-eur: 220 90% 56%;
+    --currency-cup: 38 92% 50%;
+
+    /* Status colors */
+    --status-payment-pending: 0 72% 55%;
+    --status-payment-paid: 152 69% 41%;
+    --status-delivery-pending: 38 92% 50%;
     --status-delivery-transit: 262 52% 51%;
-    --status-delivery-delivered: 162 73% 46%;
+    --status-delivery-delivered: 152 69% 41%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 217 91% 60%;
+    --border: 220 13% 90%;
+    --input: 220 13% 90%;
+    --ring: 220 90% 56%;
 
-    --radius: 0.75rem;
+    --radius: 1rem;
+
+    --shadow-sm: 0 1px 2px 0 hsl(220 20% 10% / 0.03);
+    --shadow-md: 0 4px 12px -2px hsl(220 20% 10% / 0.06);
+    --shadow-lg: 0 8px 24px -4px hsl(220 20% 10% / 0.08);
   }
 }
 
@@ -64,6 +69,39 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Better touch targets for mobile */
+  button, a, [role="button"] {
+    min-height: 44px;
+    @apply touch-manipulation;
+  }
+
+  /* Small buttons exception */
+  .btn-sm-touch {
+    min-height: 36px;
+  }
+}
+
+@layer utilities {
+  .shadow-fintech-sm {
+    box-shadow: var(--shadow-sm);
+  }
+  .shadow-fintech-md {
+    box-shadow: var(--shadow-md);
+  }
+  .shadow-fintech-lg {
+    box-shadow: var(--shadow-lg);
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }

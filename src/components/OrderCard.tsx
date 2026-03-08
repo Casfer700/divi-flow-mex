@@ -1,8 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, MapPin, DollarSign, User, CalendarIcon, Edit, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MessageCircle, MapPin, Check, MoreVertical, Edit, Trash2, Truck, CreditCard, User, CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -51,6 +50,40 @@ interface OrderCardProps {
   getDeliveryBadge: (status: string) => JSX.Element;
 }
 
+function OrderProgressTimeline({ paymentStatus, deliveryStatus }: { paymentStatus: string; deliveryStatus: string }) {
+  const steps = [
+    { label: "Pago", completed: paymentStatus === "paid" || paymentStatus === "verified", active: paymentStatus === "pending" },
+    { label: "Proceso", completed: deliveryStatus === "in_transit" || deliveryStatus === "delivered", active: paymentStatus !== "pending" && deliveryStatus === "pending" },
+    { label: "Entregado", completed: deliveryStatus === "delivered", active: deliveryStatus === "in_transit" },
+  ];
+
+  return (
+    <div className="flex items-center gap-1 w-full">
+      {steps.map((step, i) => (
+        <div key={step.label} className="flex items-center flex-1">
+          <div className="flex flex-col items-center flex-1">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold transition-colors ${
+              step.completed
+                ? "bg-success text-success-foreground"
+                : step.active
+                ? "bg-warning text-warning-foreground"
+                : "bg-muted text-muted-foreground"
+            }`}>
+              {step.completed ? <Check className="h-3.5 w-3.5" /> : i + 1}
+            </div>
+            <span className="text-[10px] mt-1 text-muted-foreground font-medium">{step.label}</span>
+          </div>
+          {i < steps.length - 1 && (
+            <div className={`h-0.5 flex-1 -mt-4 mx-0.5 rounded-full ${
+              step.completed ? "bg-success" : "bg-muted"
+            }`} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function OrderCard({
   order,
   profile,
@@ -63,151 +96,160 @@ export function OrderCard({
   getPaymentBadge,
   getDeliveryBadge,
 }: OrderCardProps) {
+  const mainAmount = order.usd_amount > 0
+    ? `$${order.usd_amount.toFixed(2)} USD`
+    : order.eur_amount > 0
+    ? `€${order.eur_amount.toFixed(2)} EUR`
+    : `$${order.cup_amount.toFixed(2)} CUP`;
+
+  const secondaryAmounts = [
+    order.usd_amount > 0 ? `$${order.usd_amount.toFixed(2)} USD` : null,
+    order.eur_amount > 0 ? `€${order.eur_amount.toFixed(2)} EUR` : null,
+    order.cup_amount > 0 ? `$${order.cup_amount.toFixed(2)} CUP` : null,
+  ].filter(Boolean);
+
+  const isAdminOrLocal = profile?.role === "admin" || profile?.role === "local";
+  const isDeliveryOwner = profile?.role === "delivery" && order.assigned_to === user?.id;
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <CardTitle className="text-lg">{order.customers.name}</CardTitle>
-            <div className="flex flex-wrap gap-2">
-              {getPaymentBadge(order.payment_status)}
-              {getDeliveryBadge(order.delivery_status)}
-              <Badge variant="outline" className="text-xs">
-                {order.price_type === "retail" ? "Menudeo" : "Mayoreo"}
-              </Badge>
-            </div>
-          </div>
-          {order.assigned_user && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <User className="h-4 w-4" />
-              <span>
-                Asignado a: {order.assigned_user.full_name} 
-                ({order.assigned_user.role === "local" ? "Local" : "Repartidor"})
-              </span>
-            </div>
-          )}
-          {order.delivery_date && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CalendarIcon className="h-4 w-4" />
-              <span>
-                Fecha de entrega: {format(new Date(order.delivery_date), "PPP", { locale: es })}
-              </span>
-            </div>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <div>
-                {order.usd_amount > 0 && <span className="mr-2">USD: ${order.usd_amount.toFixed(2)}</span>}
-                {order.eur_amount > 0 && <span className="mr-2">EUR: €{order.eur_amount.toFixed(2)}</span>}
-                {order.cup_amount > 0 && <span>CUP: ${order.cup_amount.toFixed(2)}</span>}
-              </div>
-            </div>
-            <p className="text-sm font-medium">Total: ${order.total_mxn.toFixed(2)} MXN</p>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-start gap-2 text-sm">
-              <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-              <p className="text-muted-foreground">{order.customers.address}</p>
-            </div>
-            {order.customers.notes && (
-              <p className="text-sm text-muted-foreground italic">{order.customers.notes}</p>
-            )}
+    <div className="bg-card rounded-2xl shadow-fintech-md p-4 space-y-3 animate-fade-in">
+      {/* Header: name + menu */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-base truncate">{order.customers.name}</h3>
+          <div className="flex items-center gap-1 mt-0.5">
+            <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+            <p className="text-xs text-muted-foreground truncate">{order.customers.address}</p>
           </div>
         </div>
 
-        {order.delivery_notes && (
-          <div className="bg-muted p-3 rounded-md">
-            <p className="text-sm font-medium mb-1">Notas de entrega:</p>
-            <p className="text-sm text-muted-foreground">{order.delivery_notes}</p>
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={() => onSendWhatsApp(order)}
-            className="gap-2"
-            variant="outline"
-          >
-            <MessageCircle className="h-4 w-4" />
-            WhatsApp
-          </Button>
-
-          {(profile?.role === "admin" || profile?.role === "local") && (
-            <>
-              <Select
-                value={order.payment_status}
-                onValueChange={(value) => onUpdateStatus(order.id, "payment_status", value)}
-              >
-                <SelectTrigger className="w-[150px] h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover">
-                  <SelectItem value="pending">Pendiente pago</SelectItem>
-                  <SelectItem value="paid">Pagado</SelectItem>
-                  <SelectItem value="verified">Verificado</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={order.delivery_status}
-                onValueChange={(value) => onUpdateStatus(order.id, "delivery_status", value)}
-              >
-                <SelectTrigger className="w-[150px] h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-popover">
-                  <SelectItem value="pending">Por entregar</SelectItem>
-                  <SelectItem value="in_transit">En camino</SelectItem>
-                  <SelectItem value="delivered">Entregado</SelectItem>
-                </SelectContent>
-              </Select>
-            </>
-          )}
-
-          {profile?.role === "delivery" && order.assigned_to === user?.id && (
-            <Button
-              size="sm"
-              onClick={() => onOpenDeliveryDialog(order)}
-              variant="default"
-            >
-              Actualizar entrega
-            </Button>
-          )}
-
-          {(profile?.role === "admin" || profile?.role === "local") && (
-            <>
+        {/* 3-dot menu for secondary actions */}
+        {isAdminOrLocal && (onEditOrder || onDeleteOrder) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 min-h-0 flex-shrink-0">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-popover">
               {onEditOrder && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onEditOrder(order)}
-                  className="gap-2"
-                >
-                  <Edit className="h-4 w-4" />
+                <DropdownMenuItem onClick={() => onEditOrder(order)}>
+                  <Edit className="h-4 w-4 mr-2" />
                   Editar
-                </Button>
+                </DropdownMenuItem>
               )}
               {onDeleteOrder && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onDeleteOrder(order.id)}
-                  className="gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
+                <DropdownMenuItem onClick={() => onDeleteOrder(order.id)} className="text-destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
                   Eliminar
-                </Button>
+                </DropdownMenuItem>
               )}
-            </>
-          )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+
+      {/* Amount section */}
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="text-2xl font-bold tracking-tight">{mainAmount}</p>
+          <p className="text-sm text-muted-foreground font-medium">${order.total_mxn.toFixed(2)} MXN</p>
         </div>
-      </CardContent>
-    </Card>
+        <div className="flex flex-col gap-1 items-end">
+          {getPaymentBadge(order.payment_status)}
+          {getDeliveryBadge(order.delivery_status)}
+        </div>
+      </div>
+
+      {/* Badges row */}
+      <div className="flex flex-wrap gap-1.5">
+        <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium">
+          {order.price_type === "retail" ? "Menudeo" : "Mayoreo"}
+        </Badge>
+        {order.assigned_user && (
+          <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium gap-1">
+            <User className="h-2.5 w-2.5" />
+            {order.assigned_user.full_name}
+          </Badge>
+        )}
+        {order.delivery_date && (
+          <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium gap-1">
+            <CalendarIcon className="h-2.5 w-2.5" />
+            {format(new Date(order.delivery_date), "d MMM", { locale: es })}
+          </Badge>
+        )}
+        {secondaryAmounts.length > 1 && (
+          <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium">
+            {secondaryAmounts.join(" · ")}
+          </Badge>
+        )}
+      </div>
+
+      {/* Progress timeline */}
+      <OrderProgressTimeline paymentStatus={order.payment_status} deliveryStatus={order.delivery_status} />
+
+      {order.delivery_notes && (
+        <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2 italic">
+          {order.delivery_notes}
+        </p>
+      )}
+
+      {/* Primary quick actions */}
+      <div className="flex gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onSendWhatsApp(order)}
+          className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium"
+        >
+          <MessageCircle className="h-4 w-4" />
+          WhatsApp
+        </Button>
+
+        {isAdminOrLocal && order.payment_status === "pending" && (
+          <Button
+            size="sm"
+            onClick={() => onUpdateStatus(order.id, "payment_status", "paid")}
+            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium bg-success hover:bg-success/90 text-success-foreground"
+          >
+            <CreditCard className="h-4 w-4" />
+            Pagado
+          </Button>
+        )}
+
+        {isAdminOrLocal && order.payment_status === "paid" && (
+          <Button
+            size="sm"
+            onClick={() => onUpdateStatus(order.id, "payment_status", "verified")}
+            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium bg-success hover:bg-success/90 text-success-foreground"
+          >
+            <Check className="h-4 w-4" />
+            Verificar
+          </Button>
+        )}
+
+        {isAdminOrLocal && order.delivery_status !== "delivered" && (
+          <Button
+            size="sm"
+            onClick={() => onUpdateStatus(order.id, "delivery_status", order.delivery_status === "pending" ? "in_transit" : "delivered")}
+            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium"
+          >
+            <Truck className="h-4 w-4" />
+            {order.delivery_status === "pending" ? "En camino" : "Entregado"}
+          </Button>
+        )}
+
+        {isDeliveryOwner && (
+          <Button
+            size="sm"
+            onClick={() => onOpenDeliveryDialog(order)}
+            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium"
+          >
+            <Truck className="h-4 w-4" />
+            Actualizar
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

@@ -8,6 +8,8 @@ import { InventoryManager } from "@/components/admin/InventoryManager";
 import { WhatsAppTemplatesManager } from "@/components/admin/WhatsAppTemplatesManager";
 import { ReportsManager } from "@/components/admin/ReportsManager";
 import { DailyCashRegister } from "@/components/admin/DailyCashRegister";
+import { AccountsManager } from "@/components/admin/AccountsManager";
+import { FinancialMovementsManager } from "@/components/admin/FinancialMovementsManager";
 import { Package, Truck, Clock, DollarSign, Banknote, Coins } from "lucide-react";
 import { startOfDay, endOfDay } from "date-fns";
 
@@ -83,6 +85,8 @@ export default function Admin() {
 
         <DailyCashRegister />
         <InventoryManager />
+        <FinancialMovementsManager embedded />
+        <AccountsManager />
         <ExchangeRatesManager />
         <WhatsAppTemplatesManager />
         <ReportsManager />

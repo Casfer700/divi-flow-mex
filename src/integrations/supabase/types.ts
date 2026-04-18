@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounts: {
+        Row: {
+          account_type: Database["public"]["Enums"]["account_type"]
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          initial_balance: number
+          is_active: boolean
+          name: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_type?: Database["public"]["Enums"]["account_type"]
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          initial_balance?: number
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_type?: Database["public"]["Enums"]["account_type"]
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          initial_balance?: number
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string
@@ -90,6 +129,68 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      financial_movements: {
+        Row: {
+          account_id: string | null
+          amount: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          movement_date: string
+          movement_type: Database["public"]["Enums"]["movement_type"]
+          notes: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          reference: string | null
+          reference_id: string | null
+          reference_type: string | null
+          source: Database["public"]["Enums"]["movement_source"]
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          id?: string
+          movement_date?: string
+          movement_type: Database["public"]["Enums"]["movement_type"]
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          reference?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          source?: Database["public"]["Enums"]["movement_source"]
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          movement_date?: string
+          movement_type?: Database["public"]["Enums"]["movement_type"]
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          reference?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          source?: Database["public"]["Enums"]["movement_source"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_movements_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       inventory_movements: {
         Row: {
@@ -300,8 +401,17 @@ export type Database = {
       }
     }
     Enums: {
+      account_type: "cash" | "bank" | "wallet" | "other"
       app_role: "admin" | "local" | "delivery"
       delivery_status: "pending" | "in_transit" | "delivered"
+      movement_source:
+        | "sale"
+        | "manual"
+        | "commission"
+        | "purchase"
+        | "currency_exchange"
+      movement_type: "income" | "expense"
+      payment_method: "cash" | "transfer"
       payment_status: "pending" | "paid" | "verified"
     }
     CompositeTypes: {
@@ -430,8 +540,18 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      account_type: ["cash", "bank", "wallet", "other"],
       app_role: ["admin", "local", "delivery"],
       delivery_status: ["pending", "in_transit", "delivered"],
+      movement_source: [
+        "sale",
+        "manual",
+        "commission",
+        "purchase",
+        "currency_exchange",
+      ],
+      movement_type: ["income", "expense"],
+      payment_method: ["cash", "transfer"],
       payment_status: ["pending", "paid", "verified"],
     },
   },

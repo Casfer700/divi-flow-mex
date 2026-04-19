@@ -104,4 +104,28 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* POS payments UX */
+  @keyframes flash-pulse {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+  }
+  .animate-flash {
+    animation: flash-pulse 0.35s ease-out;
+  }
+
+  @keyframes slide-down-in {
+    0% { opacity: 0; transform: translateY(-6px) scale(0.98); max-height: 0; }
+    100% { opacity: 1; transform: translateY(0) scale(1); max-height: 400px; }
+  }
+  .animate-slide-down {
+    animation: slide-down-in 0.25s ease-out;
+  }
+
+  @keyframes progress-fill {
+    from { width: var(--from-width, 0%); }
+    to { width: var(--to-width, 0%); }
+  }
 }
+

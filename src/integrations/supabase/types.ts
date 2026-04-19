@@ -311,6 +311,63 @@ export type Database = {
           },
         ]
       }
+      pos_sale_payments: {
+        Row: {
+          account_id: string | null
+          amount: number
+          amount_mxn: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          exchange_rate: number
+          id: string
+          notes: string | null
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          sale_id: string
+        }
+        Insert: {
+          account_id?: string | null
+          amount: number
+          amount_mxn: number
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          exchange_rate?: number
+          id?: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          sale_id: string
+        }
+        Update: {
+          account_id?: string | null
+          amount?: number
+          amount_mxn?: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          exchange_rate?: number
+          id?: string
+          notes?: string | null
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          sale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_sale_payments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_sale_payments_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "pos_sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pos_sales: {
         Row: {
           account_id: string | null

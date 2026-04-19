@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Check, Receipt, X } from "lucide-react";
+import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2 } from "lucide-react";
 
 interface Product {
   id: string;
@@ -34,20 +34,57 @@ interface RecentSale {
   sale_date: string;
 }
 
+interface ExchangeRate {
+  currency: string;
+  rate_type: string;
+  sell_rate: number;
+}
+
+interface DraftPayment {
+  key: string;
+  amount: string;
+  currency: string;
+  payment_method: "cash" | "transfer";
+  account_id: string;
+}
+
+const CURRENCIES = ["MXN", "USD", "EUR", "CUP"];
+
+// Convert any amount in `from` currency to `to` currency, via MXN.
+// USD/EUR/MXN use multiplication: amountMXN = amount * rate.
+// CUP uses division: amountMXN = amount / rate.
+function toMXN(amount: number, currency: string, rates: Record<string, number>): number {
+  if (currency === "MXN") return amount;
+  const rate = rates[currency];
+  if (!rate || rate <= 0) return 0;
+  if (currency === "CUP") return amount / rate;
+  return amount * rate;
+}
+
+function convert(amount: number, from: string, to: string, rates: Record<string, number>): number {
+  if (from === to) return amount;
+  const mxn = toMXN(amount, from, rates);
+  if (to === "MXN") return mxn;
+  const rate = rates[to];
+  if (!rate || rate <= 0) return 0;
+  if (to === "CUP") return mxn * rate;
+  return mxn / rate;
+}
+
 export default function POS() {
   const { profile } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [recent, setRecent] = useState<RecentSale[]>([]);
+  const [rates, setRates] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer">("cash");
-  const [accountId, setAccountId] = useState<string>("");
   const [salesAgent, setSalesAgent] = useState("");
   const [notes, setNotes] = useState("");
+  const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -57,7 +94,7 @@ export default function POS() {
   }, [profile, navigate]);
 
   const load = async () => {
-    const [{ data: prods }, { data: accs }, { data: sales }] = await Promise.all([
+    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }] = await Promise.all([
       supabase.from("products").select("*").eq("is_active", true).order("name"),
       supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
       supabase
@@ -65,10 +102,20 @@ export default function POS() {
         .select("id,product_name,total_amount,currency,sales_agent,sale_date")
         .order("sale_date", { ascending: false })
         .limit(8),
+      supabase.from("exchange_rates").select("currency,rate_type,sell_rate"),
     ]);
     setProducts(prods || []);
     setAccounts(accs || []);
     setRecent(sales || []);
+
+    // Build a simple rate map: prefer 'retail' rate per currency
+    const map: Record<string, number> = {};
+    (ex as ExchangeRate[] | null)?.forEach((r) => {
+      if (!map[r.currency] || r.rate_type === "retail") {
+        map[r.currency] = Number(r.sell_rate);
+      }
+    });
+    setRates(map);
   };
 
   useEffect(() => {
@@ -79,16 +126,9 @@ export default function POS() {
     const q = search.toLowerCase().trim();
     if (!q) return products;
     return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.category ?? "").toLowerCase().includes(q),
+      (p) => p.name.toLowerCase().includes(q) || (p.category ?? "").toLowerCase().includes(q),
     );
   }, [products, search]);
-
-  const matchingAccounts = useMemo(
-    () => accounts.filter((a) => !selected || a.currency === selected.currency),
-    [accounts, selected],
-  );
 
   const total = useMemo(() => {
     const p = parseFloat(price) || 0;
@@ -96,11 +136,36 @@ export default function POS() {
     return p * q;
   }, [price, quantity]);
 
+  const saleCurrency = selected?.currency ?? "MXN";
+
+  // Sum of payments converted into the sale currency
+  const paidInSaleCurrency = useMemo(() => {
+    return payments.reduce((sum, p) => {
+      const a = parseFloat(p.amount) || 0;
+      if (a <= 0) return sum;
+      return sum + convert(a, p.currency, saleCurrency, rates);
+    }, 0);
+  }, [payments, saleCurrency, rates]);
+
+  const remaining = Math.max(0, total - paidInSaleCurrency);
+  const overpaid = paidInSaleCurrency > total + 0.001;
+  const fullyPaid = total > 0 && Math.abs(paidInSaleCurrency - total) < 0.01;
+
+  const totalMXN = useMemo(() => toMXN(total, saleCurrency, rates), [total, saleCurrency, rates]);
+  const paidMXN = useMemo(
+    () =>
+      payments.reduce((sum, p) => {
+        const a = parseFloat(p.amount) || 0;
+        return sum + toMXN(a, p.currency, rates);
+      }, 0),
+    [payments, rates],
+  );
+
   const pickProduct = (p: Product) => {
     setSelected(p);
     setPrice(String(p.base_price));
     setQuantity("1");
-    setAccountId("");
+    setPayments([]);
   };
 
   const clear = () => {
@@ -108,7 +173,30 @@ export default function POS() {
     setPrice("");
     setQuantity("1");
     setNotes("");
-    setAccountId("");
+    setPayments([]);
+  };
+
+  const addPayment = (currency: string) => {
+    // Pre-fill with remaining amount converted to chosen currency
+    const remainingInCurrency = convert(remaining, saleCurrency, currency, rates);
+    setPayments((prev) => [
+      ...prev,
+      {
+        key: crypto.randomUUID(),
+        amount: remainingInCurrency > 0 ? remainingInCurrency.toFixed(2) : "",
+        currency,
+        payment_method: "cash",
+        account_id: "",
+      },
+    ]);
+  };
+
+  const updatePayment = (key: string, patch: Partial<DraftPayment>) => {
+    setPayments((prev) => prev.map((p) => (p.key === key ? { ...p, ...patch } : p)));
+  };
+
+  const removePayment = (key: string) => {
+    setPayments((prev) => prev.filter((p) => p.key !== key));
   };
 
   const confirm = async () => {
@@ -118,37 +206,74 @@ export default function POS() {
     }
     const unit = parseFloat(price);
     const qty = parseFloat(quantity);
-    if (!unit || unit <= 0) {
-      toast.error("Precio inválido");
-      return;
-    }
-    if (!qty || qty <= 0) {
-      toast.error("Cantidad inválida");
-      return;
+    if (!unit || unit <= 0) return toast.error("Precio inválido");
+    if (!qty || qty <= 0) return toast.error("Cantidad inválida");
+    if (payments.length === 0) return toast.error("Agrega al menos un pago");
+    if (overpaid) return toast.error("El total pagado excede el total de la venta");
+    if (!fullyPaid) return toast.error("La venta no está completamente pagada");
+
+    for (const p of payments) {
+      const a = parseFloat(p.amount);
+      if (!a || a <= 0) return toast.error("Todos los pagos deben tener monto válido");
     }
 
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { error } = await supabase.from("pos_sales").insert({
-      product_id: selected.id,
-      product_name: selected.name,
-      unit_price: unit,
-      quantity: qty,
-      total_amount: unit * qty,
-      currency: selected.currency,
-      payment_method: paymentMethod,
-      account_id: accountId || null,
-      sales_agent: salesAgent.trim() || null,
-      notes: notes.trim() || null,
-      created_by: user?.id,
-    });
+    // 1) Create the sale header
+    const { data: saleRow, error: saleErr } = await supabase
+      .from("pos_sales")
+      .insert({
+        product_id: selected.id,
+        product_name: selected.name,
+        unit_price: unit,
+        quantity: qty,
+        total_amount: unit * qty,
+        currency: selected.currency,
+        // Header keeps a representative method/account (first payment)
+        payment_method: payments[0].payment_method,
+        account_id: payments[0].account_id || null,
+        sales_agent: salesAgent.trim() || null,
+        notes: notes.trim() || null,
+        created_by: user?.id,
+      })
+      .select("id")
+      .single();
 
-    setSubmitting(false);
-    if (error) {
-      toast.error(error.message);
+    if (saleErr || !saleRow) {
+      setSubmitting(false);
+      toast.error(saleErr?.message ?? "Error al crear la venta");
       return;
     }
+
+    // 2) Insert each payment row → trigger creates financial movements
+    const paymentRows = payments.map((p) => {
+      const amt = parseFloat(p.amount);
+      const mxnEq = toMXN(amt, p.currency, rates);
+      // Stored exchange_rate is the rate vs MXN used for this payment
+      const rate = p.currency === "MXN" ? 1 : rates[p.currency] ?? 1;
+      return {
+        sale_id: saleRow.id,
+        amount: amt,
+        currency: p.currency,
+        exchange_rate: rate,
+        amount_mxn: mxnEq,
+        payment_method: p.payment_method,
+        account_id: p.account_id || null,
+        created_by: user?.id,
+      };
+    });
+
+    const { error: payErr } = await supabase.from("pos_sale_payments").insert(paymentRows);
+
+    setSubmitting(false);
+    if (payErr) {
+      // Roll back the sale to keep things consistent
+      await supabase.from("pos_sales").delete().eq("id", saleRow.id);
+      toast.error("Error al registrar pagos: " + payErr.message);
+      return;
+    }
+
     toast.success("Venta registrada");
     clear();
     load();
@@ -163,13 +288,13 @@ export default function POS() {
           <h1 className="text-xl font-bold flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" /> POS
           </h1>
-          <p className="text-xs text-muted-foreground">Registra ventas rápidas</p>
+          <p className="text-xs text-muted-foreground">Ventas con pagos multi-divisa</p>
         </div>
 
-        {/* Selected product summary */}
+        {/* Sale form */}
         {selected && (
           <Card className="border-primary/40 bg-primary/5">
-            <CardContent className="p-3">
+            <CardContent className="p-3 space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
@@ -183,82 +308,147 @@ export default function POS() {
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Precio unidad</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    className="h-11"
-                  />
+                  <Input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11" />
                 </div>
                 <div>
                   <Label className="text-xs">Cantidad</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={quantity}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    className="h-11"
-                  />
+                  <Input type="number" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="h-11" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div>
-                  <Label className="text-xs">Método</Label>
-                  <Select value={paymentMethod} onValueChange={(v: "cash" | "transfer") => setPaymentMethod(v)}>
-                    <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Efectivo</SelectItem>
-                      <SelectItem value="transfer">Transferencia</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Cuenta</Label>
-                  <Select value={accountId} onValueChange={setAccountId}>
-                    <SelectTrigger className="h-11"><SelectValue placeholder="Opcional" /></SelectTrigger>
-                    <SelectContent>
-                      {matchingAccounts.length === 0 && (
-                        <SelectItem value="__none" disabled>Sin cuentas {selected.currency}</SelectItem>
-                      )}
-                      {matchingAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="mt-3">
+              <div>
                 <Label className="text-xs">Agente de ventas</Label>
-                <Input
-                  value={salesAgent}
-                  onChange={(e) => setSalesAgent(e.target.value)}
-                  placeholder="Nombre del agente"
-                  className="h-11"
-                />
+                <Input value={salesAgent} onChange={(e) => setSalesAgent(e.target.value)} placeholder="Nombre" className="h-11" />
               </div>
 
-              <div className="mt-3">
+              <div>
                 <Label className="text-xs">Notas</Label>
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="h-11" />
               </div>
 
-              <div className="mt-4 flex items-center justify-between bg-card rounded-lg p-3">
-                <span className="text-sm text-muted-foreground">Total</span>
-                <span className="text-xl font-bold">
-                  {total.toFixed(2)} {selected.currency}
-                </span>
+              {/* Totals summary */}
+              <div className="grid grid-cols-3 gap-2 bg-card rounded-lg p-3">
+                <div>
+                  <p className="text-[10px] uppercase text-muted-foreground">Total</p>
+                  <p className="text-sm font-bold">
+                    {total.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-muted-foreground">Pagado</p>
+                  <p className="text-sm font-bold text-success">
+                    {paidInSaleCurrency.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-muted-foreground">Restante</p>
+                  <p className={`text-sm font-bold ${overpaid ? "text-destructive" : remaining > 0 ? "text-warning" : "text-success"}`}>
+                    {(overpaid ? paidInSaleCurrency - total : remaining).toFixed(2)}
+                    <span className="text-[10px] text-muted-foreground"> {saleCurrency}</span>
+                  </p>
+                </div>
+              </div>
+
+              {saleCurrency !== "MXN" && total > 0 && (
+                <p className="text-[11px] text-muted-foreground -mt-1">
+                  ≈ {totalMXN.toFixed(2)} MXN · pagado {paidMXN.toFixed(2)} MXN
+                </p>
+              )}
+
+              {/* Payments */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Pagos</Label>
+                  <div className="flex gap-1">
+                    {CURRENCIES.map((c) => (
+                      <Button
+                        key={c}
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-2 text-[11px]"
+                        onClick={() => addPayment(c)}
+                      >
+                        <Plus className="h-3 w-3 mr-0.5" />
+                        {c}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {payments.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground text-center py-2">
+                    Agrega un pago en la divisa que prefieras
+                  </p>
+                )}
+
+                {payments.map((p) => {
+                  const matchingAccounts = accounts.filter((a) => a.currency === p.currency);
+                  const amt = parseFloat(p.amount) || 0;
+                  const eq = convert(amt, p.currency, saleCurrency, rates);
+                  return (
+                    <div key={p.key} className="rounded-lg border bg-card p-2.5 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-muted">{p.currency}</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={p.amount}
+                          onChange={(e) => updatePayment(p.key, { amount: e.target.value })}
+                          className="h-9 flex-1"
+                          placeholder="0.00"
+                        />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => removePayment(p.key)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select
+                          value={p.payment_method}
+                          onValueChange={(v: "cash" | "transfer") => updatePayment(p.key, { payment_method: v })}
+                        >
+                          <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">Efectivo</SelectItem>
+                            <SelectItem value="transfer">Transferencia</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={p.account_id}
+                          onValueChange={(v) => updatePayment(p.key, { account_id: v })}
+                        >
+                          <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Cuenta" /></SelectTrigger>
+                          <SelectContent>
+                            {matchingAccounts.length === 0 && (
+                              <SelectItem value="__none" disabled>Sin cuentas {p.currency}</SelectItem>
+                            )}
+                            {matchingAccounts.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {p.currency !== saleCurrency && amt > 0 && (
+                        <p className="text-[10px] text-muted-foreground">
+                          ≈ {eq.toFixed(2)} {saleCurrency}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <Button
-                className="w-full h-12 mt-3 gap-2"
+                className="w-full h-12 gap-2"
                 onClick={confirm}
-                disabled={submitting}
+                disabled={submitting || !fullyPaid || overpaid || payments.length === 0}
               >
                 <Check className="h-5 w-5" />
                 {submitting ? "Procesando..." : "Confirmar venta"}
@@ -296,15 +486,11 @@ export default function POS() {
                     key={p.id}
                     onClick={() => pickProduct(p)}
                     className={`text-left rounded-xl border p-3 transition ${
-                      active
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-card hover:border-primary/40"
+                      active ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"
                     }`}
                   >
                     <p className="font-semibold text-sm truncate">{p.name}</p>
-                    {p.category && (
-                      <p className="text-[10px] text-muted-foreground truncate">{p.category}</p>
-                    )}
+                    {p.category && <p className="text-[10px] text-muted-foreground truncate">{p.category}</p>}
                     <p className="text-sm font-bold mt-1">
                       {p.base_price.toFixed(2)} <span className="text-[10px] text-muted-foreground">{p.currency}</span>
                     </p>

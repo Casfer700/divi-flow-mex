@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2 } from "lucide-react";
+import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Product {
   id: string;

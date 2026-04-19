@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut, Package, Users, Settings, Wallet } from "lucide-react";
+import { LogOut, Package, Users, Settings, Wallet, ShoppingCart } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 interface LayoutProps {
@@ -18,6 +18,7 @@ export function Layout({ children }: LayoutProps) {
   ];
 
   if (profile?.role === "admin" || profile?.role === "local") {
+    navigation.push({ name: "POS", href: "/pos", icon: ShoppingCart });
     navigation.push({ name: "Finanzas", href: "/finance", icon: Wallet });
   }
 

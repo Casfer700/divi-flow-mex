@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2 } from "lucide-react";
+import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Product {
   id: string;
@@ -150,6 +151,29 @@ export default function POS() {
   const remaining = Math.max(0, total - paidInSaleCurrency);
   const overpaid = paidInSaleCurrency > total + 0.001;
   const fullyPaid = total > 0 && Math.abs(paidInSaleCurrency - total) < 0.01;
+  const progressPct = total > 0 ? Math.min(100, (paidInSaleCurrency / total) * 100) : 0;
+
+  // Flash animation when paid amount or remaining changes
+  const [flashKey, setFlashKey] = useState(0);
+  const lastPaidRef = useRef(paidInSaleCurrency);
+  useEffect(() => {
+    if (Math.abs(paidInSaleCurrency - lastPaidRef.current) > 0.001) {
+      lastPaidRef.current = paidInSaleCurrency;
+      setFlashKey((k) => k + 1);
+    }
+  }, [paidInSaleCurrency]);
+
+  // Inline validation message for the confirm button
+  const validationMessage = useMemo(() => {
+    if (!selected) return null;
+    if (total <= 0) return "Define un precio y cantidad válidos";
+    if (payments.length === 0) return "Agrega al menos un pago";
+    const hasEmpty = payments.some((p) => !parseFloat(p.amount) || parseFloat(p.amount) <= 0);
+    if (hasEmpty) return "Hay pagos vacíos o con monto inválido";
+    if (overpaid) return `Sobrepago de ${(paidInSaleCurrency - total).toFixed(2)} ${saleCurrency}`;
+    if (!fullyPaid) return `Falta pagar ${remaining.toFixed(2)} ${saleCurrency}`;
+    return null;
+  }, [selected, total, payments, overpaid, fullyPaid, paidInSaleCurrency, remaining, saleCurrency]);
 
   const totalMXN = useMemo(() => toMXN(total, saleCurrency, rates), [total, saleCurrency, rates]);
   const paidMXN = useMemo(
@@ -329,34 +353,58 @@ export default function POS() {
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="h-11" />
               </div>
 
-              {/* Totals summary */}
-              <div className="grid grid-cols-3 gap-2 bg-card rounded-lg p-3">
-                <div>
-                  <p className="text-[10px] uppercase text-muted-foreground">Total</p>
-                  <p className="text-sm font-bold">
-                    {total.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
-                  </p>
+              {/* Totals summary with animated progress */}
+              <div className="bg-card rounded-lg p-3 space-y-2.5">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-[10px] uppercase text-muted-foreground">Total</p>
+                    <p className="text-sm font-bold tabular-nums">
+                      {total.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase text-muted-foreground">Pagado</p>
+                    <p
+                      key={`paid-${flashKey}`}
+                      className="text-sm font-bold text-success tabular-nums origin-left animate-flash"
+                    >
+                      {paidInSaleCurrency.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase text-muted-foreground">
+                      {overpaid ? "Sobrepago" : "Restante"}
+                    </p>
+                    <p
+                      key={`rem-${flashKey}`}
+                      className={cn(
+                        "text-sm font-bold tabular-nums origin-left animate-flash",
+                        overpaid ? "text-destructive" : remaining > 0 ? "text-warning" : "text-success",
+                      )}
+                    >
+                      {(overpaid ? paidInSaleCurrency - total : remaining).toFixed(2)}
+                      <span className="text-[10px] text-muted-foreground"> {saleCurrency}</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase text-muted-foreground">Pagado</p>
-                  <p className="text-sm font-bold text-success">
-                    {paidInSaleCurrency.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase text-muted-foreground">Restante</p>
-                  <p className={`text-sm font-bold ${overpaid ? "text-destructive" : remaining > 0 ? "text-warning" : "text-success"}`}>
-                    {(overpaid ? paidInSaleCurrency - total : remaining).toFixed(2)}
-                    <span className="text-[10px] text-muted-foreground"> {saleCurrency}</span>
-                  </p>
-                </div>
-              </div>
 
-              {saleCurrency !== "MXN" && total > 0 && (
-                <p className="text-[11px] text-muted-foreground -mt-1">
-                  ≈ {totalMXN.toFixed(2)} MXN · pagado {paidMXN.toFixed(2)} MXN
-                </p>
-              )}
+                {/* Progress bar */}
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-300 ease-out",
+                      overpaid ? "bg-destructive" : fullyPaid ? "bg-success" : "bg-primary",
+                    )}
+                    style={{ width: `${overpaid ? 100 : progressPct}%` }}
+                  />
+                </div>
+
+                {saleCurrency !== "MXN" && total > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    ≈ {totalMXN.toFixed(2)} MXN · pagado {paidMXN.toFixed(2)} MXN
+                  </p>
+                )}
+              </div>
 
               {/* Payments */}
               <div className="space-y-2">
@@ -368,7 +416,7 @@ export default function POS() {
                         key={c}
                         size="sm"
                         variant="outline"
-                        className="h-8 px-2 text-[11px]"
+                        className="h-8 px-2 text-[11px] active:scale-95 transition-transform"
                         onClick={() => addPayment(c)}
                       >
                         <Plus className="h-3 w-3 mr-0.5" />
@@ -388,22 +436,31 @@ export default function POS() {
                   const matchingAccounts = accounts.filter((a) => a.currency === p.currency);
                   const amt = parseFloat(p.amount) || 0;
                   const eq = convert(amt, p.currency, saleCurrency, rates);
+                  const isEmpty = !amt || amt <= 0;
                   return (
-                    <div key={p.key} className="rounded-lg border bg-card p-2.5 space-y-2">
+                    <div
+                      key={p.key}
+                      className={cn(
+                        "rounded-lg border bg-card p-2.5 space-y-2 animate-slide-down origin-top",
+                        isEmpty && "border-warning/60",
+                      )}
+                    >
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-muted">{p.currency}</span>
                         <Input
                           type="number"
                           step="0.01"
+                          inputMode="decimal"
                           value={p.amount}
                           onChange={(e) => updatePayment(p.key, { amount: e.target.value })}
-                          className="h-9 flex-1"
+                          className={cn("h-9 flex-1 tabular-nums", isEmpty && "border-warning/60")}
                           placeholder="0.00"
+                          autoFocus
                         />
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-destructive"
+                          className="h-8 w-8 text-destructive active:scale-90 transition-transform"
                           onClick={() => removePayment(p.key)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -440,18 +497,39 @@ export default function POS() {
                           ≈ {eq.toFixed(2)} {saleCurrency}
                         </p>
                       )}
+                      {isEmpty && (
+                        <p className="text-[10px] text-warning flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> Ingresa un monto
+                        </p>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
+              {/* Inline validation banner */}
+              {validationMessage && (
+                <div
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium animate-fade-in",
+                    overpaid
+                      ? "bg-destructive/10 text-destructive"
+                      : "bg-warning/10 text-warning-foreground",
+                  )}
+                  style={{ color: overpaid ? undefined : "hsl(var(--warning))" }}
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{validationMessage}</span>
+                </div>
+              )}
+
               <Button
-                className="w-full h-12 gap-2"
+                className="w-full h-12 gap-2 transition-all"
                 onClick={confirm}
-                disabled={submitting || !fullyPaid || overpaid || payments.length === 0}
+                disabled={submitting || !!validationMessage}
               >
                 <Check className="h-5 w-5" />
-                {submitting ? "Procesando..." : "Confirmar venta"}
+                {submitting ? "Procesando..." : fullyPaid ? "Confirmar venta" : "Completar pago"}
               </Button>
             </CardContent>
           </Card>

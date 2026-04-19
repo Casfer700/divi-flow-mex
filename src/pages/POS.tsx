@@ -151,6 +151,29 @@ export default function POS() {
   const remaining = Math.max(0, total - paidInSaleCurrency);
   const overpaid = paidInSaleCurrency > total + 0.001;
   const fullyPaid = total > 0 && Math.abs(paidInSaleCurrency - total) < 0.01;
+  const progressPct = total > 0 ? Math.min(100, (paidInSaleCurrency / total) * 100) : 0;
+
+  // Flash animation when paid amount or remaining changes
+  const [flashKey, setFlashKey] = useState(0);
+  const lastPaidRef = useRef(paidInSaleCurrency);
+  useEffect(() => {
+    if (Math.abs(paidInSaleCurrency - lastPaidRef.current) > 0.001) {
+      lastPaidRef.current = paidInSaleCurrency;
+      setFlashKey((k) => k + 1);
+    }
+  }, [paidInSaleCurrency]);
+
+  // Inline validation message for the confirm button
+  const validationMessage = useMemo(() => {
+    if (!selected) return null;
+    if (total <= 0) return "Define un precio y cantidad válidos";
+    if (payments.length === 0) return "Agrega al menos un pago";
+    const hasEmpty = payments.some((p) => !parseFloat(p.amount) || parseFloat(p.amount) <= 0);
+    if (hasEmpty) return "Hay pagos vacíos o con monto inválido";
+    if (overpaid) return `Sobrepago de ${(paidInSaleCurrency - total).toFixed(2)} ${saleCurrency}`;
+    if (!fullyPaid) return `Falta pagar ${remaining.toFixed(2)} ${saleCurrency}`;
+    return null;
+  }, [selected, total, payments, overpaid, fullyPaid, paidInSaleCurrency, remaining, saleCurrency]);
 
   const totalMXN = useMemo(() => toMXN(total, saleCurrency, rates), [total, saleCurrency, rates]);
   const paidMXN = useMemo(

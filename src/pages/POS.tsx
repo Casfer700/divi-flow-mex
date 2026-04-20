@@ -80,6 +80,7 @@ export default function POS() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({});
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [price, setPrice] = useState("");

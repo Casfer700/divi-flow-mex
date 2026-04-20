@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle } from "lucide-react";
+import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle, Zap, Banknote, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NumericKeypad } from "@/components/pos/NumericKeypad";
 
 interface Product {
   id: string;

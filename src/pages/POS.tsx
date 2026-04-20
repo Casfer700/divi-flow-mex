@@ -741,6 +741,8 @@ export default function POS() {
             <div className="grid grid-cols-2 gap-2">
               {filtered.map((p) => {
                 const active = selected?.id === p.id;
+                const stock = stockMap[p.id] ?? 0;
+                const noStock = stock <= 0;
                 return (
                   <button
                     key={p.id}
@@ -749,7 +751,15 @@ export default function POS() {
                       active ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"
                     }`}
                   >
-                    <p className="font-semibold text-sm truncate">{p.name}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="font-semibold text-sm truncate flex-1">{p.name}</p>
+                      <span className={cn(
+                        "text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums shrink-0",
+                        noStock ? "bg-destructive/10 text-destructive" : stock < 5 ? "bg-warning/10 text-warning-foreground" : "bg-success/10 text-success",
+                      )} style={{ color: noStock ? undefined : stock < 5 ? "hsl(var(--warning))" : undefined }}>
+                        {stock.toFixed(0)}
+                      </span>
+                    </div>
                     {p.category && <p className="text-[10px] text-muted-foreground truncate">{p.category}</p>}
                     <p className="text-sm font-bold mt-1">
                       {p.base_price.toFixed(2)} <span className="text-[10px] text-muted-foreground">{p.currency}</span>

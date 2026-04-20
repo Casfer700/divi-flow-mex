@@ -99,7 +99,7 @@ export default function POS() {
   }, [profile, navigate]);
 
   const load = async () => {
-    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }] = await Promise.all([
+    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }] = await Promise.all([
       supabase.from("products").select("*").eq("is_active", true).order("name"),
       supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
       supabase
@@ -108,10 +108,16 @@ export default function POS() {
         .order("sale_date", { ascending: false })
         .limit(8),
       supabase.from("exchange_rates").select("currency,rate_type,sell_rate"),
+      supabase.from("product_stock").select("product_id,stock"),
     ]);
     setProducts(prods || []);
     setAccounts(accs || []);
     setRecent(sales || []);
+    const sm: Record<string, number> = {};
+    (stockRows as { product_id: string; stock: number }[] | null)?.forEach((r) => {
+      sm[r.product_id] = Number(r.stock);
+    });
+    setStockMap(sm);
 
     // Build a simple rate map: prefer 'retail' rate per currency
     const map: Record<string, number> = {};

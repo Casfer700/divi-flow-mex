@@ -88,6 +88,7 @@ export default function Admin() {
         <DailyCashRegister />
         <InventoryManager />
         <ProductsManager />
+        <BatchesManager />
         <FinancialMovementsManager embedded />
         <AccountsManager />
         <ExchangeRatesManager />

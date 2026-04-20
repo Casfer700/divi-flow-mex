@@ -88,6 +88,8 @@ export default function POS() {
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [quickMode, setQuickMode] = useState(true);
+  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">("cash");
 
   useEffect(() => {
     if (profile && profile.role !== "admin" && profile.role !== "local") {

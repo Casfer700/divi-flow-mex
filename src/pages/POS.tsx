@@ -306,6 +306,69 @@ export default function POS() {
     load();
   };
 
+  // Quick confirm: one-tap sale paid in full with chosen method, in sale currency.
+  const quickConfirm = async () => {
+    if (!selected) return toast.error("Selecciona un producto");
+    const unit = parseFloat(price);
+    if (!unit || unit <= 0) return toast.error("Precio inválido");
+    const qty = parseFloat(quantity) || 1;
+
+    setSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Auto-pick a matching account for the sale currency + method (optional)
+    const matching = accounts.find(
+      (a) => a.currency === selected.currency && (quickMethod === "cash" ? /efect|caja|cash/i.test(a.name) : /banco|trans|bank/i.test(a.name)),
+    ) ?? accounts.find((a) => a.currency === selected.currency);
+
+    const totalAmount = unit * qty;
+
+    const { data: saleRow, error: saleErr } = await supabase
+      .from("pos_sales")
+      .insert({
+        product_id: selected.id,
+        product_name: selected.name,
+        unit_price: unit,
+        quantity: qty,
+        total_amount: totalAmount,
+        currency: selected.currency,
+        payment_method: quickMethod,
+        account_id: matching?.id ?? null,
+        sales_agent: salesAgent.trim() || null,
+        notes: notes.trim() || null,
+        created_by: user?.id,
+      })
+      .select("id")
+      .single();
+
+    if (saleErr || !saleRow) {
+      setSubmitting(false);
+      return toast.error(saleErr?.message ?? "Error al crear la venta");
+    }
+
+    const rate = selected.currency === "MXN" ? 1 : rates[selected.currency] ?? 1;
+    const { error: payErr } = await supabase.from("pos_sale_payments").insert([{
+      sale_id: saleRow.id,
+      amount: totalAmount,
+      currency: selected.currency,
+      exchange_rate: rate,
+      amount_mxn: toMXN(totalAmount, selected.currency, rates),
+      payment_method: quickMethod,
+      account_id: matching?.id ?? null,
+      created_by: user?.id,
+    }]);
+
+    setSubmitting(false);
+    if (payErr) {
+      await supabase.from("pos_sales").delete().eq("id", saleRow.id);
+      return toast.error("Error al registrar pago: " + payErr.message);
+    }
+
+    toast.success(`Venta rápida · ${totalAmount.toFixed(2)} ${selected.currency}`);
+    clear();
+    load();
+  };
+
   if (profile && profile.role !== "admin" && profile.role !== "local") return null;
 
   return (

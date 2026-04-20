@@ -80,6 +80,7 @@ export default function POS() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({});
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [price, setPrice] = useState("");
@@ -98,7 +99,7 @@ export default function POS() {
   }, [profile, navigate]);
 
   const load = async () => {
-    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }] = await Promise.all([
+    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }] = await Promise.all([
       supabase.from("products").select("*").eq("is_active", true).order("name"),
       supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
       supabase
@@ -107,10 +108,16 @@ export default function POS() {
         .order("sale_date", { ascending: false })
         .limit(8),
       supabase.from("exchange_rates").select("currency,rate_type,sell_rate"),
+      supabase.from("product_stock").select("product_id,stock"),
     ]);
     setProducts(prods || []);
     setAccounts(accs || []);
     setRecent(sales || []);
+    const sm: Record<string, number> = {};
+    (stockRows as { product_id: string; stock: number }[] | null)?.forEach((r) => {
+      sm[r.product_id] = Number(r.stock);
+    });
+    setStockMap(sm);
 
     // Build a simple rate map: prefer 'retail' rate per currency
     const map: Record<string, number> = {};
@@ -402,11 +409,28 @@ export default function POS() {
                 <div className="min-w-0">
                   <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
                   <p className="font-bold truncate">{selected.name}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Stock: <span className={cn(
+                      "font-bold tabular-nums",
+                      (stockMap[selected.id] ?? 0) <= 0 ? "text-destructive" : "text-foreground",
+                    )}>{(stockMap[selected.id] ?? 0).toFixed(0)}</span>
+                  </p>
                 </div>
                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={clear}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+
+              {/* Insufficient stock warning */}
+              {(stockMap[selected.id] ?? 0) < (parseFloat(quantity) || 1) && (
+                <div className="flex items-start gap-2 rounded-lg p-2.5 text-xs bg-warning/10 animate-fade-in" style={{ color: "hsl(var(--warning))" }}>
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    Stock insuficiente: hay <strong>{(stockMap[selected.id] ?? 0).toFixed(0)}</strong> disponibles.
+                    La venta procederá y se consumirá lo que haya.
+                  </span>
+                </div>
+              )}
 
               {/* Big price display */}
               <div className="bg-card rounded-xl p-4 text-center">
@@ -499,13 +523,26 @@ export default function POS() {
                   <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
                   <p className="font-bold truncate">{selected.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Base: {selected.base_price.toFixed(2)} {selected.currency}
+                    Base: {selected.base_price.toFixed(2)} {selected.currency} · Stock:{" "}
+                    <span className={cn(
+                      "font-bold tabular-nums",
+                      (stockMap[selected.id] ?? 0) <= 0 ? "text-destructive" : "text-foreground",
+                    )}>{(stockMap[selected.id] ?? 0).toFixed(0)}</span>
                   </p>
                 </div>
                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={clear}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+
+              {(stockMap[selected.id] ?? 0) < (parseFloat(quantity) || 1) && (
+                <div className="flex items-start gap-2 rounded-lg p-2.5 text-xs bg-warning/10 animate-fade-in" style={{ color: "hsl(var(--warning))" }}>
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    Stock insuficiente: hay <strong>{(stockMap[selected.id] ?? 0).toFixed(0)}</strong> disponibles. La venta procederá igualmente.
+                  </span>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -734,6 +771,8 @@ export default function POS() {
             <div className="grid grid-cols-2 gap-2">
               {filtered.map((p) => {
                 const active = selected?.id === p.id;
+                const stock = stockMap[p.id] ?? 0;
+                const noStock = stock <= 0;
                 return (
                   <button
                     key={p.id}
@@ -742,7 +781,15 @@ export default function POS() {
                       active ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"
                     }`}
                   >
-                    <p className="font-semibold text-sm truncate">{p.name}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="font-semibold text-sm truncate flex-1">{p.name}</p>
+                      <span className={cn(
+                        "text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums shrink-0",
+                        noStock ? "bg-destructive/10 text-destructive" : stock < 5 ? "bg-warning/10 text-warning-foreground" : "bg-success/10 text-success",
+                      )} style={{ color: noStock ? undefined : stock < 5 ? "hsl(var(--warning))" : undefined }}>
+                        {stock.toFixed(0)}
+                      </span>
+                    </div>
                     {p.category && <p className="text-[10px] text-muted-foreground truncate">{p.category}</p>}
                     <p className="text-sm font-bold mt-1">
                       {p.base_price.toFixed(2)} <span className="text-[10px] text-muted-foreground">{p.currency}</span>

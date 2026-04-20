@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle } from "lucide-react";
+import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle, Zap, Banknote, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NumericKeypad } from "@/components/pos/NumericKeypad";
 
 interface Product {
   id: string;
@@ -87,6 +88,8 @@ export default function POS() {
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [quickMode, setQuickMode] = useState(true);
+  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">("cash");
 
   useEffect(() => {
     if (profile && profile.role !== "admin" && profile.role !== "local") {
@@ -303,20 +306,192 @@ export default function POS() {
     load();
   };
 
+  // Quick confirm: one-tap sale paid in full with chosen method, in sale currency.
+  const quickConfirm = async () => {
+    if (!selected) return toast.error("Selecciona un producto");
+    const unit = parseFloat(price);
+    if (!unit || unit <= 0) return toast.error("Precio inválido");
+    const qty = parseFloat(quantity) || 1;
+
+    setSubmitting(true);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Auto-pick a matching account for the sale currency + method (optional)
+    const matching = accounts.find(
+      (a) => a.currency === selected.currency && (quickMethod === "cash" ? /efect|caja|cash/i.test(a.name) : /banco|trans|bank/i.test(a.name)),
+    ) ?? accounts.find((a) => a.currency === selected.currency);
+
+    const totalAmount = unit * qty;
+
+    const { data: saleRow, error: saleErr } = await supabase
+      .from("pos_sales")
+      .insert({
+        product_id: selected.id,
+        product_name: selected.name,
+        unit_price: unit,
+        quantity: qty,
+        total_amount: totalAmount,
+        currency: selected.currency,
+        payment_method: quickMethod,
+        account_id: matching?.id ?? null,
+        sales_agent: salesAgent.trim() || null,
+        notes: notes.trim() || null,
+        created_by: user?.id,
+      })
+      .select("id")
+      .single();
+
+    if (saleErr || !saleRow) {
+      setSubmitting(false);
+      return toast.error(saleErr?.message ?? "Error al crear la venta");
+    }
+
+    const rate = selected.currency === "MXN" ? 1 : rates[selected.currency] ?? 1;
+    const { error: payErr } = await supabase.from("pos_sale_payments").insert([{
+      sale_id: saleRow.id,
+      amount: totalAmount,
+      currency: selected.currency,
+      exchange_rate: rate,
+      amount_mxn: toMXN(totalAmount, selected.currency, rates),
+      payment_method: quickMethod,
+      account_id: matching?.id ?? null,
+      created_by: user?.id,
+    }]);
+
+    setSubmitting(false);
+    if (payErr) {
+      await supabase.from("pos_sales").delete().eq("id", saleRow.id);
+      return toast.error("Error al registrar pago: " + payErr.message);
+    }
+
+    toast.success(`Venta rápida · ${totalAmount.toFixed(2)} ${selected.currency}`);
+    clear();
+    load();
+  };
+
   if (profile && profile.role !== "admin" && profile.role !== "local") return null;
 
   return (
     <Layout>
       <div className="space-y-5">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5" /> POS
-          </h1>
-          <p className="text-xs text-muted-foreground">Ventas con pagos multi-divisa</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5" /> POS
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              {quickMode ? "Modo rápido · venta en 10 segundos" : "Ventas con pagos multi-divisa"}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant={quickMode ? "default" : "outline"}
+            onClick={() => { setQuickMode((q) => !q); setPayments([]); }}
+            className="gap-1.5 h-9"
+          >
+            <Zap className={cn("h-4 w-4", quickMode && "fill-current")} />
+            {quickMode ? "Rápido" : "Detallado"}
+          </Button>
         </div>
 
-        {/* Sale form */}
-        {selected && (
+        {/* Quick Sale Mode */}
+        {quickMode && selected && (
+          <Card className="border-primary/40 bg-primary/5 animate-fade-in">
+            <CardContent className="p-3 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
+                  <p className="font-bold truncate">{selected.name}</p>
+                </div>
+                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={clear}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* Big price display */}
+              <div className="bg-card rounded-xl p-4 text-center">
+                <p className="text-[10px] uppercase text-muted-foreground tracking-wide">Total a cobrar</p>
+                <p
+                  key={`qprice-${price}`}
+                  className="text-4xl font-bold tabular-nums animate-flash origin-center"
+                >
+                  {(parseFloat(price) || 0).toFixed(2)}
+                  <span className="text-sm text-muted-foreground ml-2">{saleCurrency}</span>
+                </p>
+              </div>
+
+              {/* Quick add buttons */}
+              <div className="grid grid-cols-4 gap-1.5">
+                {[10, 50, 100, 500].map((amt) => (
+                  <Button
+                    key={amt}
+                    variant="outline"
+                    className="h-10 text-xs font-bold active:scale-95 transition-transform"
+                    onClick={() => setPrice(String(((parseFloat(price) || 0) + amt).toFixed(2)))}
+                  >
+                    +{amt}
+                  </Button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[1000, 5000].map((amt) => (
+                  <Button
+                    key={amt}
+                    variant="outline"
+                    className="h-10 text-xs font-bold active:scale-95 transition-transform"
+                    onClick={() => setPrice(String(((parseFloat(price) || 0) + amt).toFixed(2)))}
+                  >
+                    +{amt}
+                  </Button>
+                ))}
+                <Button
+                  variant="ghost"
+                  className="h-10 text-xs font-bold text-destructive active:scale-95 transition-transform"
+                  onClick={() => setPrice("")}
+                >
+                  Limpiar
+                </Button>
+              </div>
+
+              {/* Numeric keypad */}
+              <NumericKeypad value={price} onChange={setPrice} />
+
+              {/* Payment method shortcuts */}
+              <div>
+                <Label className="text-xs">Método de pago</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <Button
+                    variant={quickMethod === "cash" ? "default" : "outline"}
+                    className="h-12 gap-2 active:scale-95 transition-transform"
+                    onClick={() => setQuickMethod("cash")}
+                  >
+                    <Banknote className="h-4 w-4" /> Efectivo
+                  </Button>
+                  <Button
+                    variant={quickMethod === "transfer" ? "default" : "outline"}
+                    className="h-12 gap-2 active:scale-95 transition-transform"
+                    onClick={() => setQuickMethod("transfer")}
+                  >
+                    <Building2 className="h-4 w-4" /> Transferencia
+                  </Button>
+                </div>
+              </div>
+
+              {/* One-tap confirm */}
+              <Button
+                className="w-full h-14 gap-2 text-base font-bold active:scale-95 transition-transform"
+                onClick={quickConfirm}
+                disabled={submitting || !(parseFloat(price) > 0)}
+              >
+                <Check className="h-5 w-5" />
+                {submitting ? "Procesando..." : `Cobrar ${(parseFloat(price) || 0).toFixed(2)} ${saleCurrency}`}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Detailed sale form (multi-currency split payments) */}
+        {!quickMode && selected && (
           <Card className="border-primary/40 bg-primary/5">
             <CardContent className="p-3 space-y-3">
               <div className="flex items-start justify-between gap-2">

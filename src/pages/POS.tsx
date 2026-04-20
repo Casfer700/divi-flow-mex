@@ -523,13 +523,26 @@ export default function POS() {
                   <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
                   <p className="font-bold truncate">{selected.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Base: {selected.base_price.toFixed(2)} {selected.currency}
+                    Base: {selected.base_price.toFixed(2)} {selected.currency} · Stock:{" "}
+                    <span className={cn(
+                      "font-bold tabular-nums",
+                      (stockMap[selected.id] ?? 0) <= 0 ? "text-destructive" : "text-foreground",
+                    )}>{(stockMap[selected.id] ?? 0).toFixed(0)}</span>
                   </p>
                 </div>
                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={clear}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+
+              {(stockMap[selected.id] ?? 0) < (parseFloat(quantity) || 1) && (
+                <div className="flex items-start gap-2 rounded-lg p-2.5 text-xs bg-warning/10 animate-fade-in" style={{ color: "hsl(var(--warning))" }}>
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    Stock insuficiente: hay <strong>{(stockMap[selected.id] ?? 0).toFixed(0)}</strong> disponibles. La venta procederá igualmente.
+                  </span>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

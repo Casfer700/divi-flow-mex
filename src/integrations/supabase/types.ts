@@ -311,6 +311,74 @@ export type Database = {
           },
         ]
       }
+      pos_sale_batch_consumption: {
+        Row: {
+          batch_id: string
+          cost_mxn_per_unit: number
+          cost_usd_per_unit: number
+          created_at: string
+          id: string
+          product_id: string
+          quantity: number
+          sale_id: string
+          total_cost_mxn: number
+          total_cost_usd: number
+        }
+        Insert: {
+          batch_id: string
+          cost_mxn_per_unit?: number
+          cost_usd_per_unit?: number
+          created_at?: string
+          id?: string
+          product_id: string
+          quantity: number
+          sale_id: string
+          total_cost_mxn?: number
+          total_cost_usd?: number
+        }
+        Update: {
+          batch_id?: string
+          cost_mxn_per_unit?: number
+          cost_usd_per_unit?: number
+          created_at?: string
+          id?: string
+          product_id?: string
+          quantity?: number
+          sale_id?: string
+          total_cost_mxn?: number
+          total_cost_usd?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_sale_batch_consumption_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_sale_batch_consumption_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_stock"
+            referencedColumns: ["product_id"]
+          },
+          {
+            foreignKeyName: "pos_sale_batch_consumption_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_sale_batch_consumption_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "pos_sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pos_sale_payments: {
         Row: {
           account_id: string | null
@@ -430,6 +498,73 @@ export type Database = {
           },
           {
             foreignKeyName: "pos_sales_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_stock"
+            referencedColumns: ["product_id"]
+          },
+          {
+            foreignKeyName: "pos_sales_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_batches: {
+        Row: {
+          cost_mxn: number
+          cost_usd: number
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          product_id: string
+          purchase_date: string
+          quantity: number
+          remaining_quantity: number
+          supplier_invoice: string | null
+          updated_at: string
+        }
+        Insert: {
+          cost_mxn?: number
+          cost_usd?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          product_id: string
+          purchase_date?: string
+          quantity: number
+          remaining_quantity: number
+          supplier_invoice?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cost_mxn?: number
+          cost_usd?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          product_id?: string
+          purchase_date?: string
+          quantity?: number
+          remaining_quantity?: number
+          supplier_invoice?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_batches_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_stock"
+            referencedColumns: ["product_id"]
+          },
+          {
+            foreignKeyName: "product_batches_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
@@ -553,9 +688,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      product_stock: {
+        Row: {
+          avg_cost_mxn: number | null
+          avg_cost_usd: number | null
+          product_id: string | null
+          product_name: string | null
+          stock: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      consume_batches_fifo: {
+        Args: { _product_id: string; _quantity: number; _sale_id: string }
+        Returns: number
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

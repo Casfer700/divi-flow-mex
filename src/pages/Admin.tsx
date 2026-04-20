@@ -11,6 +11,7 @@ import { DailyCashRegister } from "@/components/admin/DailyCashRegister";
 import { AccountsManager } from "@/components/admin/AccountsManager";
 import { FinancialMovementsManager } from "@/components/admin/FinancialMovementsManager";
 import { ProductsManager } from "@/components/admin/ProductsManager";
+import { BatchesManager } from "@/components/admin/BatchesManager";
 import { Package, Truck, Clock, DollarSign, Banknote, Coins } from "lucide-react";
 import { startOfDay, endOfDay } from "date-fns";
 

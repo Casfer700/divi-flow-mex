@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { LogOut, Package, Users, Settings, Wallet, ShoppingCart } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { NotificationCenter } from "@/components/NotificationCenter";
 
 interface LayoutProps {
   children: ReactNode;
@@ -58,7 +59,8 @@ export function Layout({ children }: LayoutProps) {
             })}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <NotificationCenter />
             <div className="text-right hidden sm:block">
               <p className="text-sm font-semibold leading-none">{profile?.full_name}</p>
               <p className="text-xs text-muted-foreground capitalize mt-0.5">{profile?.role}</p>

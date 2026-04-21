@@ -10,6 +10,7 @@ import Customers from "./pages/Customers";
 import Admin from "./pages/Admin";
 import Finance from "./pages/Finance";
 import POS from "./pages/POS";
+import Owner from "./pages/Owner";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/finance" element={<ProtectedRoute><Finance /></ProtectedRoute>} />
             <Route path="/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
+            <Route path="/owner" element={<ProtectedRoute><Owner /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

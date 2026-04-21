@@ -8,6 +8,7 @@ import { InventoryManager } from "@/components/admin/InventoryManager";
 import { WhatsAppTemplatesManager } from "@/components/admin/WhatsAppTemplatesManager";
 import { ReportsManager } from "@/components/admin/ReportsManager";
 import { DailyCashRegister } from "@/components/admin/DailyCashRegister";
+import { CashSessionManager } from "@/components/admin/CashSessionManager";
 import { AccountsManager } from "@/components/admin/AccountsManager";
 import { FinancialMovementsManager } from "@/components/admin/FinancialMovementsManager";
 import { ProductsManager } from "@/components/admin/ProductsManager";
@@ -85,6 +86,7 @@ export default function Admin() {
           </div>
         </div>
 
+        <CashSessionManager />
         <DailyCashRegister />
         <InventoryManager />
         <ProductsManager />

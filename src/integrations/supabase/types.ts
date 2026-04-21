@@ -53,6 +53,99 @@ export type Database = {
         }
         Relationships: []
       }
+      cash_session_balances: {
+        Row: {
+          account_id: string
+          actual_closing: number | null
+          created_at: string
+          currency: string
+          difference: number | null
+          expected_closing: number
+          id: string
+          opening_balance: number
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          actual_closing?: number | null
+          created_at?: string
+          currency: string
+          difference?: number | null
+          expected_closing?: number
+          id?: string
+          opening_balance?: number
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          actual_closing?: number | null
+          created_at?: string
+          currency?: string
+          difference?: number | null
+          expected_closing?: number
+          id?: string
+          opening_balance?: number
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cash_session_balances_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cash_session_balances_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "cash_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cash_sessions: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          opened_at: string
+          opened_by: string | null
+          session_date: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opened_by?: string | null
+          session_date?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opened_by?: string | null
+          session_date?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string
@@ -700,6 +793,10 @@ export type Database = {
       }
     }
     Functions: {
+      compute_expected_closing: {
+        Args: { _account_id: string; _session_id: string }
+        Returns: number
+      }
       consume_batches_fifo: {
         Args: { _product_id: string; _quantity: number; _sale_id: string }
         Returns: number

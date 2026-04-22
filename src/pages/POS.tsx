@@ -353,14 +353,25 @@ export default function POS() {
 
     const { error: payErr } = await supabase.from("pos_sale_payments").insert(paymentRows);
 
-    setSubmitting(false);
     if (payErr) {
       // Roll back the sale to keep things consistent
       await supabase.from("pos_sales").delete().eq("id", saleRow.id);
+      setSubmitting(false);
       toast.error("Error al registrar pagos: " + payErr.message);
       return;
     }
 
+    // 3) If invoice-tracked, link & mark invoice as sold
+    if (selected.is_invoice_tracked && selectedInvoiceId) {
+      await supabase.from("batch_invoices")
+        .update({ status: "sold", sale_id: saleRow.id })
+        .eq("id", selectedInvoiceId);
+    }
+
+    // 4) Persist last account from first payment
+    if (payments[0].account_id) localStorage.setItem(LS_ACCOUNT, payments[0].account_id);
+
+    setSubmitting(false);
     toast.success("Venta registrada");
     clear();
     load();
@@ -369,12 +380,17 @@ export default function POS() {
   // Quick confirm: one-tap sale paid in full with chosen method, in sale currency.
   const quickConfirm = async () => {
     if (!selected) return toast.error("Selecciona un producto");
+    if (!salesAgentId) return toast.error("Selecciona un agente de ventas");
+    if (selected.is_invoice_tracked && !selectedInvoiceId) {
+      return toast.error("Selecciona una factura disponible");
+    }
     const unit = parseFloat(price);
     if (!unit || unit <= 0) return toast.error("Precio inválido");
     const qty = parseFloat(quantity) || 1;
 
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const agentName = agents.find((a) => a.id === salesAgentId)?.name ?? null;
 
     // Auto-pick a matching account for the sale currency + method (optional)
     const matching = accounts.find(
@@ -394,7 +410,9 @@ export default function POS() {
         currency: selected.currency,
         payment_method: quickMethod,
         account_id: matching?.id ?? null,
-        sales_agent: salesAgent.trim() || null,
+        sales_agent: agentName,
+        sales_agent_id: salesAgentId,
+        commission_mxn: parseFloat(commission) || 0,
         notes: notes.trim() || null,
         created_by: user?.id,
       })

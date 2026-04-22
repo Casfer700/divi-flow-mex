@@ -53,6 +53,102 @@ export type Database = {
         }
         Relationships: []
       }
+      batch_invoices: {
+        Row: {
+          account_id: string | null
+          batch_id: string
+          cost_mxn: number
+          cost_usd: number
+          created_at: string
+          created_by: string | null
+          id: string
+          invoice_number: string
+          notes: string | null
+          payment_amount: number
+          payment_currency: string
+          payment_date: string
+          payment_method: Database["public"]["Enums"]["payment_method"]
+          product_id: string
+          sale_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string | null
+          batch_id: string
+          cost_mxn?: number
+          cost_usd?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          invoice_number: string
+          notes?: string | null
+          payment_amount?: number
+          payment_currency?: string
+          payment_date?: string
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          product_id: string
+          sale_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string | null
+          batch_id?: string
+          cost_mxn?: number
+          cost_usd?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          invoice_number?: string
+          notes?: string | null
+          payment_amount?: number
+          payment_currency?: string
+          payment_date?: string
+          payment_method?: Database["public"]["Enums"]["payment_method"]
+          product_id?: string
+          sale_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "batch_invoices_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "batch_invoices_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "product_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "batch_invoices_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "product_stock"
+            referencedColumns: ["product_id"]
+          },
+          {
+            foreignKeyName: "batch_invoices_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "batch_invoices_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "pos_sales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cash_session_balances: {
         Row: {
           account_id: string
@@ -145,6 +241,69 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      currency_exchanges: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          currency_account_id: string | null
+          exchange_rate: number
+          id: string
+          mxn_account_id: string | null
+          mxn_equivalent: number
+          notes: string | null
+          operation: string
+          operation_date: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          currency_account_id?: string | null
+          exchange_rate: number
+          id?: string
+          mxn_account_id?: string | null
+          mxn_equivalent: number
+          notes?: string | null
+          operation: string
+          operation_date?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          currency_account_id?: string | null
+          exchange_rate?: number
+          id?: string
+          mxn_account_id?: string | null
+          mxn_equivalent?: number
+          notes?: string | null
+          operation?: string
+          operation_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "currency_exchanges_currency_account_id_fkey"
+            columns: ["currency_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "currency_exchanges_mxn_account_id_fkey"
+            columns: ["mxn_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customers: {
         Row: {
@@ -532,6 +691,7 @@ export type Database = {
       pos_sales: {
         Row: {
           account_id: string | null
+          commission_mxn: number
           created_at: string
           created_by: string | null
           currency: string
@@ -543,12 +703,14 @@ export type Database = {
           quantity: number
           sale_date: string
           sales_agent: string | null
+          sales_agent_id: string | null
           total_amount: number
           unit_price: number
           updated_at: string
         }
         Insert: {
           account_id?: string | null
+          commission_mxn?: number
           created_at?: string
           created_by?: string | null
           currency?: string
@@ -560,12 +722,14 @@ export type Database = {
           quantity?: number
           sale_date?: string
           sales_agent?: string | null
+          sales_agent_id?: string | null
           total_amount: number
           unit_price: number
           updated_at?: string
         }
         Update: {
           account_id?: string | null
+          commission_mxn?: number
           created_at?: string
           created_by?: string | null
           currency?: string
@@ -577,6 +741,7 @@ export type Database = {
           quantity?: number
           sale_date?: string
           sales_agent?: string | null
+          sales_agent_id?: string | null
           total_amount?: number
           unit_price?: number
           updated_at?: string
@@ -601,6 +766,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_sales_sales_agent_id_fkey"
+            columns: ["sales_agent_id"]
+            isOneToOne: false
+            referencedRelation: "sales_agents"
             referencedColumns: ["id"]
           },
         ]
@@ -675,6 +847,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_invoice_tracked: boolean
           name: string
           updated_at: string
         }
@@ -687,6 +860,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_invoice_tracked?: boolean
           name: string
           updated_at?: string
         }
@@ -699,6 +873,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_invoice_tracked?: boolean
           name?: string
           updated_at?: string
         }
@@ -725,6 +900,39 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      sales_agents: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          default_commission_mxn: number
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          default_commission_mxn?: number
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          default_commission_mxn?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -823,6 +1031,7 @@ export type Database = {
         | "commission"
         | "purchase"
         | "currency_exchange"
+        | "purchase_invoice"
       movement_type: "income" | "expense"
       payment_method: "cash" | "transfer"
       payment_status: "pending" | "paid" | "verified"
@@ -962,6 +1171,7 @@ export const Constants = {
         "commission",
         "purchase",
         "currency_exchange",
+        "purchase_invoice",
       ],
       movement_type: ["income", "expense"],
       payment_method: ["cash", "transfer"],

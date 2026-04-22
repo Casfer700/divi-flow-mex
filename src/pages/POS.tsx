@@ -99,16 +99,23 @@ export default function POS() {
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({});
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [availableInvoices, setAvailableInvoices] = useState<AvailableInvoice[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [salesAgent, setSalesAgent] = useState("");
+  const [salesAgentId, setSalesAgentId] = useState<string>(() => localStorage.getItem(LS_AGENT) || "");
+  const [commission, setCommission] = useState("0");
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+  const [invoiceSearch, setInvoiceSearch] = useState("");
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [quickMode, setQuickMode] = useState(true);
-  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">("cash");
+  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">(
+    () => (localStorage.getItem(LS_METHOD) as "cash" | "transfer") || "cash",
+  );
 
   useEffect(() => {
     if (profile && profile.role !== "admin" && profile.role !== "local") {
@@ -117,8 +124,8 @@ export default function POS() {
   }, [profile, navigate]);
 
   const load = async () => {
-    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }] = await Promise.all([
-      supabase.from("products").select("*").eq("is_active", true).order("name"),
+    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }, { data: ags }, { data: invs }] = await Promise.all([
+      supabase.from("products").select("id,name,base_price,currency,category,is_invoice_tracked").eq("is_active", true).order("name"),
       supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
       supabase
         .from("pos_sales")
@@ -127,10 +134,14 @@ export default function POS() {
         .limit(8),
       supabase.from("exchange_rates").select("currency,rate_type,sell_rate"),
       supabase.from("product_stock").select("product_id,stock"),
+      supabase.from("sales_agents").select("id,name,default_commission_mxn").eq("is_active", true).order("name"),
+      supabase.from("batch_invoices").select("id,invoice_number,product_id,cost_mxn").eq("status", "available").order("created_at"),
     ]);
-    setProducts(prods || []);
+    setProducts((prods as Product[]) || []);
     setAccounts(accs || []);
     setRecent(sales || []);
+    setAgents((ags as Agent[]) || []);
+    setAvailableInvoices((invs as AvailableInvoice[]) || []);
     const sm: Record<string, number> = {};
     (stockRows as { product_id: string; stock: number }[] | null)?.forEach((r) => {
       sm[r.product_id] = Number(r.stock);
@@ -150,6 +161,20 @@ export default function POS() {
   useEffect(() => {
     load();
   }, []);
+
+  // Suggest agent's default commission when commission is empty/0
+  useEffect(() => {
+    if (!salesAgentId) return;
+    const a = agents.find((x) => x.id === salesAgentId);
+    if (a && (commission === "" || commission === "0")) {
+      setCommission(String(a.default_commission_mxn || 0));
+    }
+    localStorage.setItem(LS_AGENT, salesAgentId);
+  }, [salesAgentId, agents]);
+
+  useEffect(() => {
+    localStorage.setItem(LS_METHOD, quickMethod);
+  }, [quickMethod]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();

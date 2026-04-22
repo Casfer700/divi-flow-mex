@@ -13,6 +13,8 @@ import { AccountsManager } from "@/components/admin/AccountsManager";
 import { FinancialMovementsManager } from "@/components/admin/FinancialMovementsManager";
 import { ProductsManager } from "@/components/admin/ProductsManager";
 import { BatchesManager } from "@/components/admin/BatchesManager";
+import { BatchInvoicesManager } from "@/components/admin/BatchInvoicesManager";
+import { SalesAgentsManager } from "@/components/admin/SalesAgentsManager";
 import { Package, Truck, Clock, DollarSign, Banknote, Coins } from "lucide-react";
 import { startOfDay, endOfDay } from "date-fns";
 
@@ -91,6 +93,8 @@ export default function Admin() {
         <InventoryManager />
         <ProductsManager />
         <BatchesManager />
+        <BatchInvoicesManager />
+        <SalesAgentsManager />
         <FinancialMovementsManager embedded />
         <AccountsManager />
         <ExchangeRatesManager />

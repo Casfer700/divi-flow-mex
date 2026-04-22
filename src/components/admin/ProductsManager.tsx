@@ -18,6 +18,7 @@ interface Product {
   currency: string;
   category: string | null;
   is_active: boolean;
+  is_invoice_tracked: boolean;
 }
 
 const CURRENCIES = ["MXN", "USD", "EUR", "CUP"];
@@ -34,6 +35,7 @@ export function ProductsManager() {
     currency: "MXN",
     category: "",
     is_active: true,
+    is_invoice_tracked: false,
   });
 
   const load = async () => {
@@ -53,7 +55,7 @@ export function ProductsManager() {
 
   const reset = () => {
     setEditing(null);
-    setForm({ name: "", description: "", base_price: "", currency: "MXN", category: "", is_active: true });
+    setForm({ name: "", description: "", base_price: "", currency: "MXN", category: "", is_active: true, is_invoice_tracked: false });
   };
 
   const openEdit = (p: Product) => {
@@ -65,6 +67,7 @@ export function ProductsManager() {
       currency: p.currency,
       category: p.category ?? "",
       is_active: p.is_active,
+      is_invoice_tracked: p.is_invoice_tracked ?? false,
     });
     setOpen(true);
   };
@@ -81,6 +84,7 @@ export function ProductsManager() {
       currency: form.currency,
       category: form.category.trim() || null,
       is_active: form.is_active,
+      is_invoice_tracked: form.is_invoice_tracked,
     };
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -161,6 +165,13 @@ export function ProductsManager() {
               <div className="flex items-center justify-between">
                 <Label>Activo</Label>
                 <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Rastrear por factura</Label>
+                  <p className="text-[10px] text-muted-foreground">Cada unidad = una factura. POS pedirá elegirla.</p>
+                </div>
+                <Switch checked={form.is_invoice_tracked} onCheckedChange={(v) => setForm({ ...form, is_invoice_tracked: v })} />
               </div>
               <Button className="w-full h-11" onClick={submit}>
                 {editing ? "Guardar cambios" : "Crear producto"}

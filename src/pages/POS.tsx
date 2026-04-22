@@ -19,6 +19,7 @@ interface Product {
   base_price: number;
   currency: string;
   category: string | null;
+  is_invoice_tracked: boolean;
 }
 
 interface Account {
@@ -49,6 +50,23 @@ interface DraftPayment {
   payment_method: "cash" | "transfer";
   account_id: string;
 }
+
+interface Agent {
+  id: string;
+  name: string;
+  default_commission_mxn: number;
+}
+
+interface AvailableInvoice {
+  id: string;
+  invoice_number: string;
+  product_id: string;
+  cost_mxn: number;
+}
+
+const LS_AGENT = "pos_last_agent_id";
+const LS_METHOD = "pos_last_method";
+const LS_ACCOUNT = "pos_last_account_id";
 
 const CURRENCIES = ["MXN", "USD", "EUR", "CUP"];
 

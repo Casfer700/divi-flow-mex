@@ -286,16 +286,24 @@ export default function POS() {
     if (!unit || unit <= 0) return toast.error("Precio inválido");
     if (!qty || qty <= 0) return toast.error("Cantidad inválida");
     if (payments.length === 0) return toast.error("Agrega al menos un pago");
+    if (!salesAgentId) return toast.error("Selecciona un agente de ventas");
     if (overpaid) return toast.error("El total pagado excede el total de la venta");
     if (!fullyPaid) return toast.error("La venta no está completamente pagada");
+    if (selected.is_invoice_tracked && !selectedInvoiceId) {
+      return toast.error("Selecciona una factura disponible");
+    }
 
     for (const p of payments) {
       const a = parseFloat(p.amount);
       if (!a || a <= 0) return toast.error("Todos los pagos deben tener monto válido");
+      if (p.payment_method === "transfer" && !p.account_id) {
+        return toast.error("Las transferencias requieren cuenta");
+      }
     }
 
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const agentName = agents.find((a) => a.id === salesAgentId)?.name ?? null;
 
     // 1) Create the sale header
     const { data: saleRow, error: saleErr } = await supabase
@@ -310,7 +318,9 @@ export default function POS() {
         // Header keeps a representative method/account (first payment)
         payment_method: payments[0].payment_method,
         account_id: payments[0].account_id || null,
-        sales_agent: salesAgent.trim() || null,
+        sales_agent: agentName,
+        sales_agent_id: salesAgentId,
+        commission_mxn: parseFloat(commission) || 0,
         notes: notes.trim() || null,
         created_by: user?.id,
       })

@@ -19,6 +19,7 @@ interface Product {
   base_price: number;
   currency: string;
   category: string | null;
+  is_invoice_tracked: boolean;
 }
 
 interface Account {
@@ -49,6 +50,23 @@ interface DraftPayment {
   payment_method: "cash" | "transfer";
   account_id: string;
 }
+
+interface Agent {
+  id: string;
+  name: string;
+  default_commission_mxn: number;
+}
+
+interface AvailableInvoice {
+  id: string;
+  invoice_number: string;
+  product_id: string;
+  cost_mxn: number;
+}
+
+const LS_AGENT = "pos_last_agent_id";
+const LS_METHOD = "pos_last_method";
+const LS_ACCOUNT = "pos_last_account_id";
 
 const CURRENCIES = ["MXN", "USD", "EUR", "CUP"];
 
@@ -81,16 +99,23 @@ export default function POS() {
   const [recent, setRecent] = useState<RecentSale[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({});
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [availableInvoices, setAvailableInvoices] = useState<AvailableInvoice[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [salesAgent, setSalesAgent] = useState("");
+  const [salesAgentId, setSalesAgentId] = useState<string>(() => localStorage.getItem(LS_AGENT) || "");
+  const [commission, setCommission] = useState("0");
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+  const [invoiceSearch, setInvoiceSearch] = useState("");
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [quickMode, setQuickMode] = useState(true);
-  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">("cash");
+  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">(
+    () => (localStorage.getItem(LS_METHOD) as "cash" | "transfer") || "cash",
+  );
 
   useEffect(() => {
     if (profile && profile.role !== "admin" && profile.role !== "local") {
@@ -99,8 +124,8 @@ export default function POS() {
   }, [profile, navigate]);
 
   const load = async () => {
-    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }] = await Promise.all([
-      supabase.from("products").select("*").eq("is_active", true).order("name"),
+    const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }, { data: ags }, { data: invs }] = await Promise.all([
+      supabase.from("products").select("id,name,base_price,currency,category,is_invoice_tracked").eq("is_active", true).order("name"),
       supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
       supabase
         .from("pos_sales")
@@ -109,10 +134,14 @@ export default function POS() {
         .limit(8),
       supabase.from("exchange_rates").select("currency,rate_type,sell_rate"),
       supabase.from("product_stock").select("product_id,stock"),
+      supabase.from("sales_agents").select("id,name,default_commission_mxn").eq("is_active", true).order("name"),
+      supabase.from("batch_invoices").select("id,invoice_number,product_id,cost_mxn").eq("status", "available").order("created_at"),
     ]);
-    setProducts(prods || []);
+    setProducts((prods as Product[]) || []);
     setAccounts(accs || []);
     setRecent(sales || []);
+    setAgents((ags as Agent[]) || []);
+    setAvailableInvoices((invs as AvailableInvoice[]) || []);
     const sm: Record<string, number> = {};
     (stockRows as { product_id: string; stock: number }[] | null)?.forEach((r) => {
       sm[r.product_id] = Number(r.stock);
@@ -132,6 +161,20 @@ export default function POS() {
   useEffect(() => {
     load();
   }, []);
+
+  // Suggest agent's default commission when commission is empty/0
+  useEffect(() => {
+    if (!salesAgentId) return;
+    const a = agents.find((x) => x.id === salesAgentId);
+    if (a && (commission === "" || commission === "0")) {
+      setCommission(String(a.default_commission_mxn || 0));
+    }
+    localStorage.setItem(LS_AGENT, salesAgentId);
+  }, [salesAgentId, agents]);
+
+  useEffect(() => {
+    localStorage.setItem(LS_METHOD, quickMethod);
+  }, [quickMethod]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -200,6 +243,8 @@ export default function POS() {
     setPrice(String(p.base_price));
     setQuantity("1");
     setPayments([]);
+    setSelectedInvoiceId("");
+    setInvoiceSearch("");
   };
 
   const clear = () => {
@@ -208,7 +253,22 @@ export default function POS() {
     setQuantity("1");
     setNotes("");
     setPayments([]);
+    setSelectedInvoiceId("");
+    setInvoiceSearch("");
+    // keep agent + commission for next sale (smart default)
   };
+
+  // Available invoices filtered to current product
+  const productInvoices = useMemo(
+    () => availableInvoices.filter((i) => selected && i.product_id === selected.id),
+    [availableInvoices, selected],
+  );
+
+  const filteredInvoices = useMemo(() => {
+    const q = invoiceSearch.trim().toLowerCase();
+    if (!q) return productInvoices;
+    return productInvoices.filter((i) => i.invoice_number.toLowerCase().includes(q));
+  }, [productInvoices, invoiceSearch]);
 
   const addPayment = (currency: string) => {
     // Pre-fill with remaining amount converted to chosen currency
@@ -243,16 +303,24 @@ export default function POS() {
     if (!unit || unit <= 0) return toast.error("Precio inválido");
     if (!qty || qty <= 0) return toast.error("Cantidad inválida");
     if (payments.length === 0) return toast.error("Agrega al menos un pago");
+    if (!salesAgentId) return toast.error("Selecciona un agente de ventas");
     if (overpaid) return toast.error("El total pagado excede el total de la venta");
     if (!fullyPaid) return toast.error("La venta no está completamente pagada");
+    if (selected.is_invoice_tracked && !selectedInvoiceId) {
+      return toast.error("Selecciona una factura disponible");
+    }
 
     for (const p of payments) {
       const a = parseFloat(p.amount);
       if (!a || a <= 0) return toast.error("Todos los pagos deben tener monto válido");
+      if (p.payment_method === "transfer" && !p.account_id) {
+        return toast.error("Las transferencias requieren cuenta");
+      }
     }
 
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const agentName = agents.find((a) => a.id === salesAgentId)?.name ?? null;
 
     // 1) Create the sale header
     const { data: saleRow, error: saleErr } = await supabase
@@ -267,7 +335,9 @@ export default function POS() {
         // Header keeps a representative method/account (first payment)
         payment_method: payments[0].payment_method,
         account_id: payments[0].account_id || null,
-        sales_agent: salesAgent.trim() || null,
+        sales_agent: agentName,
+        sales_agent_id: salesAgentId,
+        commission_mxn: parseFloat(commission) || 0,
         notes: notes.trim() || null,
         created_by: user?.id,
       })
@@ -300,14 +370,25 @@ export default function POS() {
 
     const { error: payErr } = await supabase.from("pos_sale_payments").insert(paymentRows);
 
-    setSubmitting(false);
     if (payErr) {
       // Roll back the sale to keep things consistent
       await supabase.from("pos_sales").delete().eq("id", saleRow.id);
+      setSubmitting(false);
       toast.error("Error al registrar pagos: " + payErr.message);
       return;
     }
 
+    // 3) If invoice-tracked, link & mark invoice as sold
+    if (selected.is_invoice_tracked && selectedInvoiceId) {
+      await supabase.from("batch_invoices")
+        .update({ status: "sold", sale_id: saleRow.id })
+        .eq("id", selectedInvoiceId);
+    }
+
+    // 4) Persist last account from first payment
+    if (payments[0].account_id) localStorage.setItem(LS_ACCOUNT, payments[0].account_id);
+
+    setSubmitting(false);
     toast.success("Venta registrada");
     clear();
     load();
@@ -316,12 +397,17 @@ export default function POS() {
   // Quick confirm: one-tap sale paid in full with chosen method, in sale currency.
   const quickConfirm = async () => {
     if (!selected) return toast.error("Selecciona un producto");
+    if (!salesAgentId) return toast.error("Selecciona un agente de ventas");
+    if (selected.is_invoice_tracked && !selectedInvoiceId) {
+      return toast.error("Selecciona una factura disponible");
+    }
     const unit = parseFloat(price);
     if (!unit || unit <= 0) return toast.error("Precio inválido");
     const qty = parseFloat(quantity) || 1;
 
     setSubmitting(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const agentName = agents.find((a) => a.id === salesAgentId)?.name ?? null;
 
     // Auto-pick a matching account for the sale currency + method (optional)
     const matching = accounts.find(
@@ -341,7 +427,9 @@ export default function POS() {
         currency: selected.currency,
         payment_method: quickMethod,
         account_id: matching?.id ?? null,
-        sales_agent: salesAgent.trim() || null,
+        sales_agent: agentName,
+        sales_agent_id: salesAgentId,
+        commission_mxn: parseFloat(commission) || 0,
         notes: notes.trim() || null,
         created_by: user?.id,
       })
@@ -555,10 +643,49 @@ export default function POS() {
                 </div>
               </div>
 
-              <div>
-                <Label className="text-xs">Agente de ventas</Label>
-                <Input value={salesAgent} onChange={(e) => setSalesAgent(e.target.value)} placeholder="Nombre" className="h-11" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Agente *</Label>
+                  <Select value={salesAgentId} onValueChange={setSalesAgentId}>
+                    <SelectTrigger className="h-11"><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                    <SelectContent className="bg-popover">
+                      {agents.length === 0 && <SelectItem value="__none" disabled>Sin agentes</SelectItem>}
+                      {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Comisión MXN</Label>
+                  <Input type="number" step="0.01" inputMode="decimal" value={commission}
+                    onChange={(e) => setCommission(e.target.value)} className="h-11" />
+                </div>
               </div>
+
+              {selected.is_invoice_tracked && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Factura disponible *</Label>
+                  <Input value={invoiceSearch} onChange={(e) => setInvoiceSearch(e.target.value)}
+                    placeholder="Buscar # factura..." className="h-9" />
+                  {filteredInvoices.length === 0 ? (
+                    <p className="text-[11px] text-warning">Sin facturas disponibles para este producto.</p>
+                  ) : (
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {filteredInvoices.map((inv) => (
+                        <button key={inv.id} type="button"
+                          onClick={() => setSelectedInvoiceId(inv.id)}
+                          className={cn(
+                            "w-full text-left rounded border px-2 py-1.5 text-xs transition",
+                            selectedInvoiceId === inv.id
+                              ? "border-primary bg-primary/10 font-bold"
+                              : "border-border bg-card hover:border-primary/40",
+                          )}>
+                          #{inv.invoice_number} · costo {Number(inv.cost_mxn).toFixed(2)} MXN
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <Label className="text-xs">Notas</Label>

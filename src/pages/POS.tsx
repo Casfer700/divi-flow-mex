@@ -243,6 +243,8 @@ export default function POS() {
     setPrice(String(p.base_price));
     setQuantity("1");
     setPayments([]);
+    setSelectedInvoiceId("");
+    setInvoiceSearch("");
   };
 
   const clear = () => {
@@ -251,7 +253,22 @@ export default function POS() {
     setQuantity("1");
     setNotes("");
     setPayments([]);
+    setSelectedInvoiceId("");
+    setInvoiceSearch("");
+    // keep agent + commission for next sale (smart default)
   };
+
+  // Available invoices filtered to current product
+  const productInvoices = useMemo(
+    () => availableInvoices.filter((i) => selected && i.product_id === selected.id),
+    [availableInvoices, selected],
+  );
+
+  const filteredInvoices = useMemo(() => {
+    const q = invoiceSearch.trim().toLowerCase();
+    if (!q) return productInvoices;
+    return productInvoices.filter((i) => i.invoice_number.toLowerCase().includes(q));
+  }, [productInvoices, invoiceSearch]);
 
   const addPayment = (currency: string) => {
     // Pre-fill with remaining amount converted to chosen currency
@@ -626,10 +643,49 @@ export default function POS() {
                 </div>
               </div>
 
-              <div>
-                <Label className="text-xs">Agente de ventas</Label>
-                <Input value={salesAgent} onChange={(e) => setSalesAgent(e.target.value)} placeholder="Nombre" className="h-11" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Agente *</Label>
+                  <Select value={salesAgentId} onValueChange={setSalesAgentId}>
+                    <SelectTrigger className="h-11"><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                    <SelectContent className="bg-popover">
+                      {agents.length === 0 && <SelectItem value="__none" disabled>Sin agentes</SelectItem>}
+                      {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Comisión MXN</Label>
+                  <Input type="number" step="0.01" inputMode="decimal" value={commission}
+                    onChange={(e) => setCommission(e.target.value)} className="h-11" />
+                </div>
               </div>
+
+              {selected.is_invoice_tracked && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Factura disponible *</Label>
+                  <Input value={invoiceSearch} onChange={(e) => setInvoiceSearch(e.target.value)}
+                    placeholder="Buscar # factura..." className="h-9" />
+                  {filteredInvoices.length === 0 ? (
+                    <p className="text-[11px] text-warning">Sin facturas disponibles para este producto.</p>
+                  ) : (
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {filteredInvoices.map((inv) => (
+                        <button key={inv.id} type="button"
+                          onClick={() => setSelectedInvoiceId(inv.id)}
+                          className={cn(
+                            "w-full text-left rounded border px-2 py-1.5 text-xs transition",
+                            selectedInvoiceId === inv.id
+                              ? "border-primary bg-primary/10 font-bold"
+                              : "border-border bg-card hover:border-primary/40",
+                          )}>
+                          #{inv.invoice_number} · costo {Number(inv.cost_mxn).toFixed(2)} MXN
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <Label className="text-xs">Notas</Label>

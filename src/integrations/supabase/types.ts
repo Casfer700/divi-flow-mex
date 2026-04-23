@@ -57,10 +57,12 @@ export type Database = {
         Row: {
           account_id: string | null
           batch_id: string
+          cancelled_at: string | null
           cost_mxn: number
           cost_usd: number
           created_at: string
           created_by: string | null
+          due_date: string | null
           id: string
           invoice_number: string
           notes: string | null
@@ -76,10 +78,12 @@ export type Database = {
         Insert: {
           account_id?: string | null
           batch_id: string
+          cancelled_at?: string | null
           cost_mxn?: number
           cost_usd?: number
           created_at?: string
           created_by?: string | null
+          due_date?: string | null
           id?: string
           invoice_number: string
           notes?: string | null
@@ -95,10 +99,12 @@ export type Database = {
         Update: {
           account_id?: string | null
           batch_id?: string
+          cancelled_at?: string | null
           cost_mxn?: number
           cost_usd?: number
           created_at?: string
           created_by?: string | null
+          due_date?: string | null
           id?: string
           invoice_number?: string
           notes?: string | null
@@ -691,6 +697,10 @@ export type Database = {
       pos_sales: {
         Row: {
           account_id: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          commission_currency: string
           commission_mxn: number
           created_at: string
           created_by: string | null
@@ -704,12 +714,17 @@ export type Database = {
           sale_date: string
           sales_agent: string | null
           sales_agent_id: string | null
+          status: string
           total_amount: number
           unit_price: number
           updated_at: string
         }
         Insert: {
           account_id?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          commission_currency?: string
           commission_mxn?: number
           created_at?: string
           created_by?: string | null
@@ -723,12 +738,17 @@ export type Database = {
           sale_date?: string
           sales_agent?: string | null
           sales_agent_id?: string | null
+          status?: string
           total_amount: number
           unit_price: number
           updated_at?: string
         }
         Update: {
           account_id?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          commission_currency?: string
           commission_mxn?: number
           created_at?: string
           created_by?: string | null
@@ -742,6 +762,7 @@ export type Database = {
           sale_date?: string
           sales_agent?: string | null
           sales_agent_id?: string | null
+          status?: string
           total_amount?: number
           unit_price?: number
           updated_at?: string

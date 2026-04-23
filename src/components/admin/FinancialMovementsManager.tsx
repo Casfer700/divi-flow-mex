@@ -25,6 +25,8 @@ interface Movement {
   payment_method: "cash" | "transfer";
   account_id: string | null;
   reference: string | null;
+  reference_id: string | null;
+  reference_type: string | null;
   movement_date: string;
   notes: string | null;
   accounts?: { name: string } | null;

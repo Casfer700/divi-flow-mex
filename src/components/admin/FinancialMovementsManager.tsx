@@ -48,6 +48,7 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
+  const [orderCustomers, setOrderCustomers] = useState<Record<string, string>>({});
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
   const [form, setForm] = useState({
@@ -71,7 +72,26 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
     if (accRes.error) toast.error("Error al cargar cuentas");
     if (movRes.error) toast.error("Error al cargar movimientos");
     setAccounts((accRes.data || []) as Account[]);
-    setMovements((movRes.data || []) as any);
+    const movs = (movRes.data || []) as Movement[];
+    setMovements(movs);
+
+    // Enrich: for movements linked to orders, fetch customer names
+    const orderIds = Array.from(new Set(
+      movs.filter((m) => m.reference_type === "order" && m.reference_id).map((m) => m.reference_id as string),
+    ));
+    if (orderIds.length > 0) {
+      const { data: ords } = await supabase
+        .from("orders")
+        .select("id, customer:customers(name)")
+        .in("id", orderIds);
+      const map: Record<string, string> = {};
+      (ords as any[] | null)?.forEach((o) => {
+        if (o?.customer?.name) map[o.id] = o.customer.name;
+      });
+      setOrderCustomers(map);
+    } else {
+      setOrderCustomers({});
+    }
   };
 
   const totals = useMemo(() => {

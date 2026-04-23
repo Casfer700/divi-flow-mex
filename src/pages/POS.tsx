@@ -9,9 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle, Zap, Banknote, Building2 } from "lucide-react";
+import { Search, ShoppingCart, Check, Receipt, X, Plus, Trash2, AlertTriangle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NumericKeypad } from "@/components/pos/NumericKeypad";
 
 interface Product {
   id: string;
@@ -35,6 +34,7 @@ interface RecentSale {
   currency: string;
   sales_agent: string | null;
   sale_date: string;
+  status?: string;
 }
 
 interface ExchangeRate {
@@ -61,18 +61,16 @@ interface AvailableInvoice {
   id: string;
   invoice_number: string;
   product_id: string;
-  cost_mxn: number;
 }
 
 const LS_AGENT = "pos_last_agent_id";
-const LS_METHOD = "pos_last_method";
 const LS_ACCOUNT = "pos_last_account_id";
+const LS_COMM_CCY = "pos_last_commission_currency";
 
 const CURRENCIES = ["MXN", "USD", "EUR", "CUP"];
+const COMMISSION_CURRENCIES = ["USD", "MXN"];
 
 // Convert any amount in `from` currency to `to` currency, via MXN.
-// USD/EUR/MXN use multiplication: amountMXN = amount * rate.
-// CUP uses division: amountMXN = amount / rate.
 function toMXN(amount: number, currency: string, rates: Record<string, number>): number {
   if (currency === "MXN") return amount;
   const rate = rates[currency];
@@ -107,15 +105,14 @@ export default function POS() {
   const [quantity, setQuantity] = useState("1");
   const [salesAgentId, setSalesAgentId] = useState<string>(() => localStorage.getItem(LS_AGENT) || "");
   const [commission, setCommission] = useState("0");
+  const [commissionCurrency, setCommissionCurrency] = useState<string>(
+    () => localStorage.getItem(LS_COMM_CCY) || "USD",
+  );
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<DraftPayment[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [quickMode, setQuickMode] = useState(true);
-  const [quickMethod, setQuickMethod] = useState<"cash" | "transfer">(
-    () => (localStorage.getItem(LS_METHOD) as "cash" | "transfer") || "cash",
-  );
 
   useEffect(() => {
     if (profile && profile.role !== "admin" && profile.role !== "local") {
@@ -129,17 +126,17 @@ export default function POS() {
       supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
       supabase
         .from("pos_sales")
-        .select("id,product_name,total_amount,currency,sales_agent,sale_date")
+        .select("id,product_name,total_amount,currency,sales_agent,sale_date,status")
         .order("sale_date", { ascending: false })
         .limit(8),
       supabase.from("exchange_rates").select("currency,rate_type,sell_rate"),
       supabase.from("product_stock").select("product_id,stock"),
       supabase.from("sales_agents").select("id,name,default_commission_mxn").eq("is_active", true).order("name"),
-      supabase.from("batch_invoices").select("id,invoice_number,product_id,cost_mxn").eq("status", "available").order("created_at"),
+      supabase.from("batch_invoices").select("id,invoice_number,product_id").eq("status", "available").order("created_at"),
     ]);
     setProducts((prods as Product[]) || []);
     setAccounts(accs || []);
-    setRecent(sales || []);
+    setRecent((sales as RecentSale[]) || []);
     setAgents((ags as Agent[]) || []);
     setAvailableInvoices((invs as AvailableInvoice[]) || []);
     const sm: Record<string, number> = {};
@@ -148,7 +145,6 @@ export default function POS() {
     });
     setStockMap(sm);
 
-    // Build a simple rate map: prefer 'retail' rate per currency
     const map: Record<string, number> = {};
     (ex as ExchangeRate[] | null)?.forEach((r) => {
       if (!map[r.currency] || r.rate_type === "retail") {
@@ -173,8 +169,8 @@ export default function POS() {
   }, [salesAgentId, agents]);
 
   useEffect(() => {
-    localStorage.setItem(LS_METHOD, quickMethod);
-  }, [quickMethod]);
+    localStorage.setItem(LS_COMM_CCY, commissionCurrency);
+  }, [commissionCurrency]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -184,6 +180,7 @@ export default function POS() {
     );
   }, [products, search]);
 
+  // unit_price * quantity
   const total = useMemo(() => {
     const p = parseFloat(price) || 0;
     const q = parseFloat(quantity) || 0;
@@ -206,7 +203,6 @@ export default function POS() {
   const fullyPaid = total > 0 && Math.abs(paidInSaleCurrency - total) < 0.01;
   const progressPct = total > 0 ? Math.min(100, (paidInSaleCurrency / total) * 100) : 0;
 
-  // Flash animation when paid amount or remaining changes
   const [flashKey, setFlashKey] = useState(0);
   const lastPaidRef = useRef(paidInSaleCurrency);
   useEffect(() => {
@@ -216,7 +212,6 @@ export default function POS() {
     }
   }, [paidInSaleCurrency]);
 
-  // Inline validation message for the confirm button
   const validationMessage = useMemo(() => {
     if (!selected) return null;
     if (total <= 0) return "Define un precio y cantidad válidos";
@@ -227,16 +222,6 @@ export default function POS() {
     if (!fullyPaid) return `Falta pagar ${remaining.toFixed(2)} ${saleCurrency}`;
     return null;
   }, [selected, total, payments, overpaid, fullyPaid, paidInSaleCurrency, remaining, saleCurrency]);
-
-  const totalMXN = useMemo(() => toMXN(total, saleCurrency, rates), [total, saleCurrency, rates]);
-  const paidMXN = useMemo(
-    () =>
-      payments.reduce((sum, p) => {
-        const a = parseFloat(p.amount) || 0;
-        return sum + toMXN(a, p.currency, rates);
-      }, 0),
-    [payments, rates],
-  );
 
   const pickProduct = (p: Product) => {
     setSelected(p);
@@ -255,10 +240,8 @@ export default function POS() {
     setPayments([]);
     setSelectedInvoiceId("");
     setInvoiceSearch("");
-    // keep agent + commission for next sale (smart default)
   };
 
-  // Available invoices filtered to current product
   const productInvoices = useMemo(
     () => availableInvoices.filter((i) => selected && i.product_id === selected.id),
     [availableInvoices, selected],
@@ -271,7 +254,6 @@ export default function POS() {
   }, [productInvoices, invoiceSearch]);
 
   const addPayment = (currency: string) => {
-    // Pre-fill with remaining amount converted to chosen currency
     const remainingInCurrency = convert(remaining, saleCurrency, currency, rates);
     setPayments((prev) => [
       ...prev,
@@ -294,10 +276,7 @@ export default function POS() {
   };
 
   const confirm = async () => {
-    if (!selected) {
-      toast.error("Selecciona un producto");
-      return;
-    }
+    if (!selected) return toast.error("Selecciona un producto");
     const unit = parseFloat(price);
     const qty = parseFloat(quantity);
     if (!unit || unit <= 0) return toast.error("Precio inválido");
@@ -322,7 +301,7 @@ export default function POS() {
     const { data: { user } } = await supabase.auth.getUser();
     const agentName = agents.find((a) => a.id === salesAgentId)?.name ?? null;
 
-    // 1) Create the sale header
+    // 1) Create the sale header — total = unit_price * quantity
     const { data: saleRow, error: saleErr } = await supabase
       .from("pos_sales")
       .insert({
@@ -332,12 +311,12 @@ export default function POS() {
         quantity: qty,
         total_amount: unit * qty,
         currency: selected.currency,
-        // Header keeps a representative method/account (first payment)
         payment_method: payments[0].payment_method,
         account_id: payments[0].account_id || null,
         sales_agent: agentName,
         sales_agent_id: salesAgentId,
         commission_mxn: parseFloat(commission) || 0,
+        commission_currency: commissionCurrency,
         notes: notes.trim() || null,
         created_by: user?.id,
       })
@@ -350,11 +329,9 @@ export default function POS() {
       return;
     }
 
-    // 2) Insert each payment row → trigger creates financial movements
     const paymentRows = payments.map((p) => {
       const amt = parseFloat(p.amount);
       const mxnEq = toMXN(amt, p.currency, rates);
-      // Stored exchange_rate is the rate vs MXN used for this payment
       const rate = p.currency === "MXN" ? 1 : rates[p.currency] ?? 1;
       return {
         sale_id: saleRow.id,
@@ -371,21 +348,18 @@ export default function POS() {
     const { error: payErr } = await supabase.from("pos_sale_payments").insert(paymentRows);
 
     if (payErr) {
-      // Roll back the sale to keep things consistent
       await supabase.from("pos_sales").delete().eq("id", saleRow.id);
       setSubmitting(false);
       toast.error("Error al registrar pagos: " + payErr.message);
       return;
     }
 
-    // 3) If invoice-tracked, link & mark invoice as sold
     if (selected.is_invoice_tracked && selectedInvoiceId) {
       await supabase.from("batch_invoices")
         .update({ status: "sold", sale_id: saleRow.id })
         .eq("id", selectedInvoiceId);
     }
 
-    // 4) Persist last account from first payment
     if (payments[0].account_id) localStorage.setItem(LS_ACCOUNT, payments[0].account_id);
 
     setSubmitting(false);
@@ -394,223 +368,27 @@ export default function POS() {
     load();
   };
 
-  // Quick confirm: one-tap sale paid in full with chosen method, in sale currency.
-  const quickConfirm = async () => {
-    if (!selected) return toast.error("Selecciona un producto");
-    if (!salesAgentId) return toast.error("Selecciona un agente de ventas");
-    if (selected.is_invoice_tracked && !selectedInvoiceId) {
-      return toast.error("Selecciona una factura disponible");
-    }
-    const unit = parseFloat(price);
-    if (!unit || unit <= 0) return toast.error("Precio inválido");
-    const qty = parseFloat(quantity) || 1;
-
-    setSubmitting(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const agentName = agents.find((a) => a.id === salesAgentId)?.name ?? null;
-
-    // Auto-pick a matching account for the sale currency + method (optional)
-    const matching = accounts.find(
-      (a) => a.currency === selected.currency && (quickMethod === "cash" ? /efect|caja|cash/i.test(a.name) : /banco|trans|bank/i.test(a.name)),
-    ) ?? accounts.find((a) => a.currency === selected.currency);
-
-    const totalAmount = unit * qty;
-
-    const { data: saleRow, error: saleErr } = await supabase
-      .from("pos_sales")
-      .insert({
-        product_id: selected.id,
-        product_name: selected.name,
-        unit_price: unit,
-        quantity: qty,
-        total_amount: totalAmount,
-        currency: selected.currency,
-        payment_method: quickMethod,
-        account_id: matching?.id ?? null,
-        sales_agent: agentName,
-        sales_agent_id: salesAgentId,
-        commission_mxn: parseFloat(commission) || 0,
-        notes: notes.trim() || null,
-        created_by: user?.id,
-      })
-      .select("id")
-      .single();
-
-    if (saleErr || !saleRow) {
-      setSubmitting(false);
-      return toast.error(saleErr?.message ?? "Error al crear la venta");
-    }
-
-    const rate = selected.currency === "MXN" ? 1 : rates[selected.currency] ?? 1;
-    const { error: payErr } = await supabase.from("pos_sale_payments").insert([{
-      sale_id: saleRow.id,
-      amount: totalAmount,
-      currency: selected.currency,
-      exchange_rate: rate,
-      amount_mxn: toMXN(totalAmount, selected.currency, rates),
-      payment_method: quickMethod,
-      account_id: matching?.id ?? null,
-      created_by: user?.id,
-    }]);
-
-    setSubmitting(false);
-    if (payErr) {
-      await supabase.from("pos_sales").delete().eq("id", saleRow.id);
-      return toast.error("Error al registrar pago: " + payErr.message);
-    }
-
-    toast.success(`Venta rápida · ${totalAmount.toFixed(2)} ${selected.currency}`);
-    clear();
-    load();
-  };
-
   if (profile && profile.role !== "admin" && profile.role !== "local") return null;
 
   return (
     <Layout>
-      <div className="space-y-5">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5" /> POS
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {quickMode ? "Modo rápido · venta en 10 segundos" : "Ventas con pagos multi-divisa"}
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant={quickMode ? "default" : "outline"}
-            onClick={() => { setQuickMode((q) => !q); setPayments([]); }}
-            className="gap-1.5 h-9"
-          >
-            <Zap className={cn("h-4 w-4", quickMode && "fill-current")} />
-            {quickMode ? "Rápido" : "Detallado"}
-          </Button>
+      <div className="space-y-5 animate-fade-in">
+        <div>
+          <h1 className="text-lg font-bold flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" /> POS
+          </h1>
+          <p className="text-sm text-muted-foreground">Ventas con pagos multi-divisa</p>
         </div>
 
-        {/* Quick Sale Mode */}
-        {quickMode && selected && (
-          <Card className="border-primary/40 bg-primary/5 animate-fade-in">
-            <CardContent className="p-3 space-y-3">
+        {/* Sale form */}
+        {selected && (
+          <Card className="rounded-xl border-primary/40 bg-primary/5 shadow-md">
+            <CardContent className="p-4 space-y-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
-                  <p className="font-bold truncate">{selected.name}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Stock: <span className={cn(
-                      "font-bold tabular-nums",
-                      (stockMap[selected.id] ?? 0) <= 0 ? "text-destructive" : "text-foreground",
-                    )}>{(stockMap[selected.id] ?? 0).toFixed(0)}</span>
-                  </p>
-                </div>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={clear}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Insufficient stock warning */}
-              {(stockMap[selected.id] ?? 0) < (parseFloat(quantity) || 1) && (
-                <div className="flex items-start gap-2 rounded-lg p-2.5 text-xs bg-warning/10 animate-fade-in" style={{ color: "hsl(var(--warning))" }}>
-                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>
-                    Stock insuficiente: hay <strong>{(stockMap[selected.id] ?? 0).toFixed(0)}</strong> disponibles.
-                    La venta procederá y se consumirá lo que haya.
-                  </span>
-                </div>
-              )}
-
-              {/* Big price display */}
-              <div className="bg-card rounded-xl p-4 text-center">
-                <p className="text-[10px] uppercase text-muted-foreground tracking-wide">Total a cobrar</p>
-                <p
-                  key={`qprice-${price}`}
-                  className="text-4xl font-bold tabular-nums animate-flash origin-center"
-                >
-                  {(parseFloat(price) || 0).toFixed(2)}
-                  <span className="text-sm text-muted-foreground ml-2">{saleCurrency}</span>
-                </p>
-              </div>
-
-              {/* Quick add buttons */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {[10, 50, 100, 500].map((amt) => (
-                  <Button
-                    key={amt}
-                    variant="outline"
-                    className="h-10 text-xs font-bold active:scale-95 transition-transform"
-                    onClick={() => setPrice(String(((parseFloat(price) || 0) + amt).toFixed(2)))}
-                  >
-                    +{amt}
-                  </Button>
-                ))}
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {[1000, 5000].map((amt) => (
-                  <Button
-                    key={amt}
-                    variant="outline"
-                    className="h-10 text-xs font-bold active:scale-95 transition-transform"
-                    onClick={() => setPrice(String(((parseFloat(price) || 0) + amt).toFixed(2)))}
-                  >
-                    +{amt}
-                  </Button>
-                ))}
-                <Button
-                  variant="ghost"
-                  className="h-10 text-xs font-bold text-destructive active:scale-95 transition-transform"
-                  onClick={() => setPrice("")}
-                >
-                  Limpiar
-                </Button>
-              </div>
-
-              {/* Numeric keypad */}
-              <NumericKeypad value={price} onChange={setPrice} />
-
-              {/* Payment method shortcuts */}
-              <div>
-                <Label className="text-xs">Método de pago</Label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <Button
-                    variant={quickMethod === "cash" ? "default" : "outline"}
-                    className="h-12 gap-2 active:scale-95 transition-transform"
-                    onClick={() => setQuickMethod("cash")}
-                  >
-                    <Banknote className="h-4 w-4" /> Efectivo
-                  </Button>
-                  <Button
-                    variant={quickMethod === "transfer" ? "default" : "outline"}
-                    className="h-12 gap-2 active:scale-95 transition-transform"
-                    onClick={() => setQuickMethod("transfer")}
-                  >
-                    <Building2 className="h-4 w-4" /> Transferencia
-                  </Button>
-                </div>
-              </div>
-
-              {/* One-tap confirm */}
-              <Button
-                className="w-full h-14 gap-2 text-base font-bold active:scale-95 transition-transform"
-                onClick={quickConfirm}
-                disabled={submitting || !(parseFloat(price) > 0)}
-              >
-                <Check className="h-5 w-5" />
-                {submitting ? "Procesando..." : `Cobrar ${(parseFloat(price) || 0).toFixed(2)} ${saleCurrency}`}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Detailed sale form (multi-currency split payments) */}
-        {!quickMode && selected && (
-          <Card className="border-primary/40 bg-primary/5">
-            <CardContent className="p-3 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Producto</p>
-                  <p className="font-bold truncate">{selected.name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs uppercase text-muted-foreground tracking-wide">Producto</p>
+                  <p className="font-bold truncate text-base">{selected.name}</p>
+                  <p className="text-sm text-muted-foreground">
                     Base: {selected.base_price.toFixed(2)} {selected.currency} · Stock:{" "}
                     <span className={cn(
                       "font-bold tabular-nums",
@@ -618,13 +396,13 @@ export default function POS() {
                     )}>{(stockMap[selected.id] ?? 0).toFixed(0)}</span>
                   </p>
                 </div>
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={clear}>
+                <Button size="icon" variant="ghost" className="h-9 w-9 transition-all duration-200" onClick={clear}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
 
               {(stockMap[selected.id] ?? 0) < (parseFloat(quantity) || 1) && (
-                <div className="flex items-start gap-2 rounded-lg p-2.5 text-xs bg-warning/10 animate-fade-in" style={{ color: "hsl(var(--warning))" }}>
+                <div className="flex items-start gap-2 rounded-lg p-3 text-sm bg-warning/10 animate-fade-in" style={{ color: "hsl(var(--warning))" }}>
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>
                     Stock insuficiente: hay <strong>{(stockMap[selected.id] ?? 0).toFixed(0)}</strong> disponibles. La venta procederá igualmente.
@@ -632,22 +410,22 @@ export default function POS() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-xs">Precio unidad</Label>
-                  <Input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11" />
+                  <Label className="text-sm">Precio unidad</Label>
+                  <Input type="number" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} className="h-11 rounded-lg" />
                 </div>
                 <div>
-                  <Label className="text-xs">Cantidad</Label>
-                  <Input type="number" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="h-11" />
+                  <Label className="text-sm">Cantidad</Label>
+                  <Input type="number" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="h-11 rounded-lg" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-xs">Agente *</Label>
+                  <Label className="text-sm">Agente *</Label>
                   <Select value={salesAgentId} onValueChange={setSalesAgentId}>
-                    <SelectTrigger className="h-11"><SelectValue placeholder="Selecciona" /></SelectTrigger>
+                    <SelectTrigger className="h-11 rounded-lg"><SelectValue placeholder="Selecciona" /></SelectTrigger>
                     <SelectContent className="bg-popover">
                       {agents.length === 0 && <SelectItem value="__none" disabled>Sin agentes</SelectItem>}
                       {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
@@ -655,31 +433,50 @@ export default function POS() {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">Comisión MXN</Label>
-                  <Input type="number" step="0.01" inputMode="decimal" value={commission}
-                    onChange={(e) => setCommission(e.target.value)} className="h-11" />
+                  <Label className="text-sm">Comisión</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      inputMode="decimal"
+                      value={commission}
+                      onChange={(e) => setCommission(e.target.value)}
+                      className="h-11 rounded-lg flex-1"
+                      placeholder="0.00"
+                    />
+                    <Select value={commissionCurrency} onValueChange={setCommissionCurrency}>
+                      <SelectTrigger className="h-11 rounded-lg w-24">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover">
+                        {COMMISSION_CURRENCIES.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
               {selected.is_invoice_tracked && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Factura disponible *</Label>
+                <div className="space-y-2">
+                  <Label className="text-sm">Factura disponible *</Label>
                   <Input value={invoiceSearch} onChange={(e) => setInvoiceSearch(e.target.value)}
-                    placeholder="Buscar # factura..." className="h-9" />
+                    placeholder="Buscar # factura..." className="h-10 rounded-lg" />
                   {filteredInvoices.length === 0 ? (
-                    <p className="text-[11px] text-warning">Sin facturas disponibles para este producto.</p>
+                    <p className="text-sm text-warning">Sin facturas disponibles para este producto.</p>
                   ) : (
-                    <div className="max-h-32 overflow-y-auto space-y-1">
+                    <div className="max-h-40 overflow-y-auto space-y-1.5">
                       {filteredInvoices.map((inv) => (
                         <button key={inv.id} type="button"
                           onClick={() => setSelectedInvoiceId(inv.id)}
                           className={cn(
-                            "w-full text-left rounded border px-2 py-1.5 text-xs transition",
+                            "w-full text-left rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200",
                             selectedInvoiceId === inv.id
                               ? "border-primary bg-primary/10 font-bold"
                               : "border-border bg-card hover:border-primary/40",
                           )}>
-                          #{inv.invoice_number} · costo {Number(inv.cost_mxn).toFixed(2)} MXN
+                          #{inv.invoice_number}
                         </button>
                       ))}
                     </div>
@@ -688,46 +485,45 @@ export default function POS() {
               )}
 
               <div>
-                <Label className="text-xs">Notas</Label>
-                <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="h-11" />
+                <Label className="text-sm">Notas</Label>
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="h-11 rounded-lg" />
               </div>
 
-              {/* Totals summary with animated progress */}
-              <div className="bg-card rounded-lg p-3 space-y-2.5">
+              {/* Totals summary with progress — original currency only */}
+              <div className="bg-card rounded-xl p-4 space-y-3 shadow-sm">
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Total</p>
-                    <p className="text-sm font-bold tabular-nums">
-                      {total.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
+                    <p className="text-xs uppercase text-muted-foreground">Total</p>
+                    <p className="text-base font-bold tabular-nums">
+                      {total.toFixed(2)} <span className="text-xs text-muted-foreground">{saleCurrency}</span>
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">Pagado</p>
+                    <p className="text-xs uppercase text-muted-foreground">Pagado</p>
                     <p
                       key={`paid-${flashKey}`}
-                      className="text-sm font-bold text-success tabular-nums origin-left animate-flash"
+                      className="text-base font-bold text-success tabular-nums origin-left animate-flash"
                     >
-                      {paidInSaleCurrency.toFixed(2)} <span className="text-[10px] text-muted-foreground">{saleCurrency}</span>
+                      {paidInSaleCurrency.toFixed(2)} <span className="text-xs text-muted-foreground">{saleCurrency}</span>
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase text-muted-foreground">
+                    <p className="text-xs uppercase text-muted-foreground">
                       {overpaid ? "Sobrepago" : "Restante"}
                     </p>
                     <p
                       key={`rem-${flashKey}`}
                       className={cn(
-                        "text-sm font-bold tabular-nums origin-left animate-flash",
+                        "text-base font-bold tabular-nums origin-left animate-flash",
                         overpaid ? "text-destructive" : remaining > 0 ? "text-warning" : "text-success",
                       )}
                     >
                       {(overpaid ? paidInSaleCurrency - total : remaining).toFixed(2)}
-                      <span className="text-[10px] text-muted-foreground"> {saleCurrency}</span>
+                      <span className="text-xs text-muted-foreground"> {saleCurrency}</span>
                     </p>
                   </div>
                 </div>
 
-                {/* Progress bar */}
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
                   <div
                     className={cn(
@@ -737,25 +533,19 @@ export default function POS() {
                     style={{ width: `${overpaid ? 100 : progressPct}%` }}
                   />
                 </div>
-
-                {saleCurrency !== "MXN" && total > 0 && (
-                  <p className="text-[11px] text-muted-foreground">
-                    ≈ {totalMXN.toFixed(2)} MXN · pagado {paidMXN.toFixed(2)} MXN
-                  </p>
-                )}
               </div>
 
               {/* Payments */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs">Pagos</Label>
+                  <Label className="text-sm">Pagos</Label>
                   <div className="flex gap-1">
                     {CURRENCIES.map((c) => (
                       <Button
                         key={c}
                         size="sm"
                         variant="outline"
-                        className="h-8 px-2 text-[11px] active:scale-95 transition-transform"
+                        className="h-9 px-2 text-xs rounded-lg active:scale-95 transition-all duration-200"
                         onClick={() => addPayment(c)}
                       >
                         <Plus className="h-3 w-3 mr-0.5" />
@@ -766,7 +556,7 @@ export default function POS() {
                 </div>
 
                 {payments.length === 0 && (
-                  <p className="text-[11px] text-muted-foreground text-center py-2">
+                  <p className="text-sm text-muted-foreground text-center py-2">
                     Agrega un pago en la divisa que prefieras
                   </p>
                 )}
@@ -774,32 +564,31 @@ export default function POS() {
                 {payments.map((p) => {
                   const matchingAccounts = accounts.filter((a) => a.currency === p.currency);
                   const amt = parseFloat(p.amount) || 0;
-                  const eq = convert(amt, p.currency, saleCurrency, rates);
                   const isEmpty = !amt || amt <= 0;
                   return (
                     <div
                       key={p.key}
                       className={cn(
-                        "rounded-lg border bg-card p-2.5 space-y-2 animate-slide-down origin-top",
+                        "rounded-lg border bg-card p-3 space-y-2 animate-slide-down origin-top transition-all duration-200",
                         isEmpty && "border-warning/60",
                       )}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-muted">{p.currency}</span>
+                        <span className="text-xs font-bold px-2 py-1 rounded bg-muted">{p.currency}</span>
                         <Input
                           type="number"
                           step="0.01"
                           inputMode="decimal"
                           value={p.amount}
                           onChange={(e) => updatePayment(p.key, { amount: e.target.value })}
-                          className={cn("h-9 flex-1 tabular-nums", isEmpty && "border-warning/60")}
+                          className={cn("h-10 flex-1 tabular-nums rounded-lg", isEmpty && "border-warning/60")}
                           placeholder="0.00"
                           autoFocus
                         />
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-destructive active:scale-90 transition-transform"
+                          className="h-9 w-9 text-destructive active:scale-90 transition-all duration-200"
                           onClick={() => removePayment(p.key)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -810,7 +599,7 @@ export default function POS() {
                           value={p.payment_method}
                           onValueChange={(v: "cash" | "transfer") => updatePayment(p.key, { payment_method: v })}
                         >
-                          <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-10 text-sm rounded-lg"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="cash">Efectivo</SelectItem>
                             <SelectItem value="transfer">Transferencia</SelectItem>
@@ -820,7 +609,7 @@ export default function POS() {
                           value={p.account_id}
                           onValueChange={(v) => updatePayment(p.key, { account_id: v })}
                         >
-                          <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Cuenta" /></SelectTrigger>
+                          <SelectTrigger className="h-10 text-sm rounded-lg"><SelectValue placeholder="Cuenta" /></SelectTrigger>
                           <SelectContent>
                             {matchingAccounts.length === 0 && (
                               <SelectItem value="__none" disabled>Sin cuentas {p.currency}</SelectItem>
@@ -831,13 +620,8 @@ export default function POS() {
                           </SelectContent>
                         </Select>
                       </div>
-                      {p.currency !== saleCurrency && amt > 0 && (
-                        <p className="text-[10px] text-muted-foreground">
-                          ≈ {eq.toFixed(2)} {saleCurrency}
-                        </p>
-                      )}
                       {isEmpty && (
-                        <p className="text-[10px] text-warning flex items-center gap-1">
+                        <p className="text-xs text-warning flex items-center gap-1">
                           <AlertCircle className="h-3 w-3" /> Ingresa un monto
                         </p>
                       )}
@@ -846,14 +630,13 @@ export default function POS() {
                 })}
               </div>
 
-              {/* Inline validation banner */}
               {validationMessage && (
                 <div
                   className={cn(
-                    "flex items-center gap-2 rounded-lg p-2.5 text-xs font-medium animate-fade-in",
+                    "flex items-center gap-2 rounded-lg p-3 text-sm font-medium animate-fade-in",
                     overpaid
                       ? "bg-destructive/10 text-destructive"
-                      : "bg-warning/10 text-warning-foreground",
+                      : "bg-warning/10",
                   )}
                   style={{ color: overpaid ? undefined : "hsl(var(--warning))" }}
                 >
@@ -863,7 +646,7 @@ export default function POS() {
               )}
 
               <Button
-                className="w-full h-12 gap-2 transition-all"
+                className="w-full h-12 gap-2 rounded-lg bg-primary hover:bg-primary/90 transition-all duration-200"
                 onClick={confirm}
                 disabled={submitting || !!validationMessage}
               >
@@ -875,19 +658,19 @@ export default function POS() {
         )}
 
         {/* Product picker */}
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar producto..."
-              className="h-11 pl-10"
+              className="h-11 pl-10 rounded-lg"
             />
           </div>
 
           {filtered.length === 0 ? (
-            <Card>
+            <Card className="rounded-xl shadow-md">
               <CardContent className="p-6 text-center text-sm text-muted-foreground">
                 {products.length === 0
                   ? "Sin productos. Crea uno en Admin → Productos."
@@ -895,7 +678,7 @@ export default function POS() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-4 animate-fade-in">
               {filtered.map((p) => {
                 const active = selected?.id === p.id;
                 const stock = stockMap[p.id] ?? 0;
@@ -904,22 +687,23 @@ export default function POS() {
                   <button
                     key={p.id}
                     onClick={() => pickProduct(p)}
-                    className={`text-left rounded-xl border p-3 transition ${
-                      active ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40"
-                    }`}
+                    className={cn(
+                      "text-left rounded-xl border p-4 transition-all duration-200 shadow-sm hover:shadow-md min-h-[44px]",
+                      active ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/40",
+                    )}
                   >
                     <div className="flex items-start justify-between gap-1">
                       <p className="font-semibold text-sm truncate flex-1">{p.name}</p>
                       <span className={cn(
-                        "text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums shrink-0",
-                        noStock ? "bg-destructive/10 text-destructive" : stock < 5 ? "bg-warning/10 text-warning-foreground" : "bg-success/10 text-success",
+                        "text-xs font-bold px-2 py-0.5 rounded tabular-nums shrink-0",
+                        noStock ? "bg-destructive/10 text-destructive" : stock < 5 ? "bg-warning/10" : "bg-success/10 text-success",
                       )} style={{ color: noStock ? undefined : stock < 5 ? "hsl(var(--warning))" : undefined }}>
                         {stock.toFixed(0)}
                       </span>
                     </div>
-                    {p.category && <p className="text-[10px] text-muted-foreground truncate">{p.category}</p>}
-                    <p className="text-sm font-bold mt-1">
-                      {p.base_price.toFixed(2)} <span className="text-[10px] text-muted-foreground">{p.currency}</span>
+                    {p.category && <p className="text-xs text-muted-foreground truncate">{p.category}</p>}
+                    <p className="text-base font-bold mt-1">
+                      {p.base_price.toFixed(2)} <span className="text-xs text-muted-foreground">{p.currency}</span>
                     </p>
                   </button>
                 );
@@ -930,29 +714,41 @@ export default function POS() {
 
         {/* Recent sales */}
         {recent.length > 0 && (
-          <div className="space-y-2">
-            <h2 className="text-sm font-bold flex items-center gap-2">
+          <div className="space-y-3">
+            <h2 className="text-base font-bold flex items-center gap-2">
               <Receipt className="h-4 w-4" /> Ventas recientes
             </h2>
-            <div className="space-y-1.5">
-              {recent.map((s) => (
-                <Card key={s.id}>
-                  <CardContent className="p-3 flex items-center justify-between">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">{s.product_name}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {new Date(s.sale_date).toLocaleString("es-MX", {
-                          day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-                        })}
-                        {s.sales_agent ? ` · ${s.sales_agent}` : ""}
-                      </p>
-                    </div>
-                    <span className="font-bold text-sm">
-                      {Number(s.total_amount).toFixed(2)} {s.currency}
-                    </span>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className="space-y-2 animate-fade-in">
+              {recent.map((s) => {
+                const cancelled = s.status === "cancelled";
+                return (
+                  <Card key={s.id} className="rounded-xl shadow-sm hover:shadow-md transition-all duration-200">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className={cn("text-sm font-semibold truncate", cancelled && "line-through text-muted-foreground")}>
+                          {s.product_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(s.sale_date).toLocaleString("es-MX", {
+                            day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+                          })}
+                          {s.sales_agent ? ` · ${s.sales_agent}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {cancelled && (
+                          <span className="text-xs font-bold px-2 py-1 rounded-lg bg-destructive/10 text-destructive">
+                            Cancelada
+                          </span>
+                        )}
+                        <span className={cn("font-bold text-sm", cancelled && "line-through text-muted-foreground")}>
+                          {Number(s.total_amount).toFixed(2)} {s.currency}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}

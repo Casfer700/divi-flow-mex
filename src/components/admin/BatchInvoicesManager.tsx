@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, CheckCircle2, Circle, Filter, Edit3, Layers } from "lucide-react";
+import { FileText, Plus, Trash2, CheckCircle2, Circle, Filter, Edit3, Layers, Pencil, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Batch { id: string; product_id: string; quantity: number; supplier_invoice: string | null; purchase_date: string; }
@@ -45,6 +45,8 @@ export function BatchInvoicesManager() {
   const [open, setOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<Invoice | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [form, setForm] = useState({

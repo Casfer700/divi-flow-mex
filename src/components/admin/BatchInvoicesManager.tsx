@@ -237,8 +237,44 @@ export function BatchInvoicesManager() {
     load();
   };
 
+  const openEdit = (inv: Invoice) => {
+    setEditing(inv);
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    if (!editing.invoice_number.trim()) return toast.error("Número de factura requerido");
+    if (editing.payment_method === "transfer" && !editing.account_id) {
+      return toast.error("Cuenta requerida para transferencias");
+    }
+    const { error } = await supabase.from("batch_invoices").update({
+      invoice_number: editing.invoice_number.trim(),
+      cost_usd: Number(editing.cost_usd) || 0,
+      cost_mxn: Number(editing.cost_mxn) || 0,
+      payment_method: editing.payment_method,
+      payment_currency: editing.payment_currency,
+      payment_amount: Number(editing.payment_amount) || 0,
+      account_id: editing.account_id || null,
+      payment_date: editing.payment_date,
+      notes: editing.notes,
+    }).eq("id", editing.id);
+    if (error) return toast.error(error.message);
+    toast.success("Factura actualizada");
+    setEditOpen(false);
+    setEditing(null);
+    load();
+  };
+
+  const editPaymentMismatch = useMemo(() => {
+    if (!editing) return false;
+    if (editing.payment_currency !== "MXN") return false;
+    return Math.abs(Number(editing.cost_mxn) - Number(editing.payment_amount)) > 0.01;
+  }, [editing]);
+
   const filteredAccounts = accounts.filter((a) => a.currency === form.payment_currency);
   const genFilteredAccounts = accounts.filter((a) => a.currency === genForm.payment_currency);
+  const editAccounts = editing ? accounts.filter((a) => a.currency === editing.payment_currency) : [];
 
   return (
     <Card className="rounded-xl shadow-md">

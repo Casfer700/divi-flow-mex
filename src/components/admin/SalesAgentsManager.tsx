@@ -89,7 +89,7 @@ export function SalesAgentsManager() {
                   <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                 </div>
                 <div>
-                  <Label>Comisión sugerida (MXN)</Label>
+                  <Label>Comisión por defecto (opcional, MXN)</Label>
                   <Input type="number" step="0.01" value={form.default_commission_mxn}
                     onChange={(e) => setForm({ ...form, default_commission_mxn: e.target.value })} />
                 </div>
@@ -125,7 +125,9 @@ export function SalesAgentsManager() {
                     )}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Comisión sugerida: ${Number(a.default_commission_mxn).toFixed(2)} MXN
+                    {Number(a.default_commission_mxn) > 0
+                      ? `Comisión por defecto: $${Number(a.default_commission_mxn).toFixed(2)} MXN`
+                      : "Sin comisión por defecto"}
                   </p>
                 </div>
                 <div className="flex gap-1">

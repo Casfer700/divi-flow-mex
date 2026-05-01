@@ -34,12 +34,30 @@ interface ReportSummary {
   deliveredOrders: number;
 }
 
+interface ExpenseBreakdown {
+  source: string;
+  currency: string;
+  total: number;
+  count: number;
+}
+
+const EXPENSE_SOURCE_LABEL: Record<string, string> = {
+  manual: "Manuales",
+  commission: "Comisiones",
+  purchase: "Compras",
+  purchase_invoice: "Facturas de compra",
+  currency_exchange: "Cambio de divisa",
+  sale: "Reembolsos venta",
+};
+
 export function ReportsManager() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reportType, setReportType] = useState<"all" | "paid" | "pending">("all");
   const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState<ReportSummary | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseBreakdown[]>([]);
+  const [expenseTotalMXN, setExpenseTotalMXN] = useState(0);
 
   const generateReport = async () => {
     if (!startDate || !endDate) { toast.error("Selecciona un rango de fechas"); return; }
@@ -62,6 +80,31 @@ export function ReportsManager() {
       pendingOrders: data.filter(o => o.payment_status === "pending").length,
       deliveredOrders: data.filter(o => o.delivery_status === "delivered").length,
     });
+
+    // Pull ALL expenses regardless of source from financial_movements
+    const { data: expData, error: expErr } = await supabase
+      .from("financial_movements")
+      .select("source, currency, amount")
+      .eq("movement_type", "expense")
+      .gte("movement_date", new Date(startDate).toISOString())
+      .lte("movement_date", new Date(endDate + "T23:59:59").toISOString());
+    if (expErr) {
+      toast.error("Error al cargar egresos");
+    } else {
+      const map = new Map<string, ExpenseBreakdown>();
+      let totalMxn = 0;
+      (expData || []).forEach((m: any) => {
+        const key = `${m.source}::${m.currency}`;
+        if (!map.has(key)) map.set(key, { source: m.source, currency: m.currency, total: 0, count: 0 });
+        const row = map.get(key)!;
+        row.total += Number(m.amount);
+        row.count += 1;
+        if (m.currency === "MXN") totalMxn += Number(m.amount);
+      });
+      setExpenses(Array.from(map.values()).sort((a, b) => b.total - a.total));
+      setExpenseTotalMXN(totalMxn);
+    }
+
     toast.success(`Reporte: ${data.length} órdenes`);
   };
 

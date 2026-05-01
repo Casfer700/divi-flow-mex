@@ -18,6 +18,7 @@ interface Exchange {
   mxn_equivalent: number;
   operation_date: string;
   notes: string | null;
+  customer_name: string | null;
 }
 
 const FOREIGN = ["USD", "EUR", "CUP"];
@@ -32,6 +33,7 @@ export function CurrencyExchangeManager() {
   const [rate, setRate] = useState("");
   const [currencyAccount, setCurrencyAccount] = useState("");
   const [mxnAccount, setMxnAccount] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -73,13 +75,14 @@ export function CurrencyExchangeManager() {
       mxn_equivalent: mxnEquivalent,
       currency_account_id: currencyAccount,
       mxn_account_id: mxnAccount,
+      customer_name: customerName.trim() || null,
       notes: notes.trim() || null,
       created_by: user?.id,
     });
     setSubmitting(false);
     if (error) return toast.error(error.message);
     toast.success(`${operation === "sell" ? "Venta" : "Compra"} de divisa registrada`);
-    setAmount(""); setRate(""); setNotes("");
+    setAmount(""); setRate(""); setNotes(""); setCustomerName("");
     load();
   };
 
@@ -173,6 +176,16 @@ export function CurrencyExchangeManager() {
       </div>
 
       <div>
+        <Label className="text-xs">Cliente / Contacto</Label>
+        <Input
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          placeholder={operation === "sell" ? "Quien recibe la divisa" : "Quien provee la divisa"}
+          className="h-10"
+        />
+      </div>
+
+      <div>
         <Label className="text-xs">Notas</Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="h-10" />
       </div>
@@ -186,8 +199,8 @@ export function CurrencyExchangeManager() {
           <p className="text-[11px] uppercase text-muted-foreground tracking-wide">Historial reciente</p>
           <div className="space-y-1">
             {history.map((h) => (
-              <div key={h.id} className="rounded-lg border bg-card p-2 text-xs flex items-center justify-between">
-                <div>
+              <div key={h.id} className="rounded-lg border bg-card p-2 text-xs flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
                   <span className={cn(
                     "font-bold",
                     h.operation === "sell" ? "text-success" : "text-warning",
@@ -195,11 +208,14 @@ export function CurrencyExchangeManager() {
                     {h.operation === "sell" ? "Venta" : "Compra"}
                   </span>{" "}
                   {Number(h.amount).toFixed(2)} {h.currency} @ {Number(h.exchange_rate).toFixed(4)}
+                  {h.customer_name && (
+                    <p className="text-[11px] font-medium truncate">👤 {h.customer_name}</p>
+                  )}
                   <p className="text-[10px] text-muted-foreground">
                     {new Date(h.operation_date).toLocaleString("es-MX")}
                   </p>
                 </div>
-                <span className="font-bold tabular-nums">${Number(h.mxn_equivalent).toFixed(2)} MXN</span>
+                <span className="font-bold tabular-nums shrink-0">${Number(h.mxn_equivalent).toFixed(2)} MXN</span>
               </div>
             ))}
           </div>

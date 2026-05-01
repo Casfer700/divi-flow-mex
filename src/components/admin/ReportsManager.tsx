@@ -34,12 +34,30 @@ interface ReportSummary {
   deliveredOrders: number;
 }
 
+interface ExpenseBreakdown {
+  source: string;
+  currency: string;
+  total: number;
+  count: number;
+}
+
+const EXPENSE_SOURCE_LABEL: Record<string, string> = {
+  manual: "Manuales",
+  commission: "Comisiones",
+  purchase: "Compras",
+  purchase_invoice: "Facturas de compra",
+  currency_exchange: "Cambio de divisa",
+  sale: "Reembolsos venta",
+};
+
 export function ReportsManager() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reportType, setReportType] = useState<"all" | "paid" | "pending">("all");
   const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState<ReportSummary | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseBreakdown[]>([]);
+  const [expenseTotalMXN, setExpenseTotalMXN] = useState(0);
 
   const generateReport = async () => {
     if (!startDate || !endDate) { toast.error("Selecciona un rango de fechas"); return; }
@@ -62,6 +80,31 @@ export function ReportsManager() {
       pendingOrders: data.filter(o => o.payment_status === "pending").length,
       deliveredOrders: data.filter(o => o.delivery_status === "delivered").length,
     });
+
+    // Pull ALL expenses regardless of source from financial_movements
+    const { data: expData, error: expErr } = await supabase
+      .from("financial_movements")
+      .select("source, currency, amount")
+      .eq("movement_type", "expense")
+      .gte("movement_date", new Date(startDate).toISOString())
+      .lte("movement_date", new Date(endDate + "T23:59:59").toISOString());
+    if (expErr) {
+      toast.error("Error al cargar egresos");
+    } else {
+      const map = new Map<string, ExpenseBreakdown>();
+      let totalMxn = 0;
+      (expData || []).forEach((m: any) => {
+        const key = `${m.source}::${m.currency}`;
+        if (!map.has(key)) map.set(key, { source: m.source, currency: m.currency, total: 0, count: 0 });
+        const row = map.get(key)!;
+        row.total += Number(m.amount);
+        row.count += 1;
+        if (m.currency === "MXN") totalMxn += Number(m.amount);
+      });
+      setExpenses(Array.from(map.values()).sort((a, b) => b.total - a.total));
+      setExpenseTotalMXN(totalMxn);
+    }
+
     toast.success(`Reporte: ${data.length} órdenes`);
   };
 
@@ -152,6 +195,33 @@ export function ReportsManager() {
                 <p className="text-sm font-bold">{s.value}</p>
               </div>
             ))}
+          </div>
+
+          {/* Expenses breakdown — ALL sources */}
+          <div className="bg-card rounded-xl border p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Egresos por origen</p>
+              <p className="text-sm font-bold text-destructive tabular-nums">
+                ${expenseTotalMXN.toFixed(2)} MXN
+              </p>
+            </div>
+            {expenses.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">Sin egresos en el período</p>
+            ) : (
+              <div className="space-y-1">
+                {expenses.map((e) => (
+                  <div key={`${e.source}-${e.currency}`} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{EXPENSE_SOURCE_LABEL[e.source] ?? e.source}</p>
+                      <p className="text-[10px] text-muted-foreground">{e.count} mov · {e.currency}</p>
+                    </div>
+                    <p className="font-bold tabular-nums text-destructive">
+                      {e.currency === "MXN" ? "$" : ""}{e.total.toFixed(2)} {e.currency !== "MXN" && e.currency}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={exportToPDF} className="h-10 rounded-xl gap-1 text-xs font-semibold">

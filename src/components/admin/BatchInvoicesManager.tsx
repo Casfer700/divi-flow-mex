@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { FileText, Plus, Trash2, CheckCircle2, Circle, Filter, Edit3, Layers } from "lucide-react";
+import { FileText, Plus, Trash2, CheckCircle2, Circle, Filter, Edit3, Layers, Pencil, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Batch { id: string; product_id: string; quantity: number; supplier_invoice: string | null; purchase_date: string; }
@@ -45,6 +45,8 @@ export function BatchInvoicesManager() {
   const [open, setOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<Invoice | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [form, setForm] = useState({
@@ -235,8 +237,44 @@ export function BatchInvoicesManager() {
     load();
   };
 
+  const openEdit = (inv: Invoice) => {
+    setEditing(inv);
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    if (!editing.invoice_number.trim()) return toast.error("Número de factura requerido");
+    if (editing.payment_method === "transfer" && !editing.account_id) {
+      return toast.error("Cuenta requerida para transferencias");
+    }
+    const { error } = await supabase.from("batch_invoices").update({
+      invoice_number: editing.invoice_number.trim(),
+      cost_usd: Number(editing.cost_usd) || 0,
+      cost_mxn: Number(editing.cost_mxn) || 0,
+      payment_method: editing.payment_method,
+      payment_currency: editing.payment_currency,
+      payment_amount: Number(editing.payment_amount) || 0,
+      account_id: editing.account_id || null,
+      payment_date: editing.payment_date,
+      notes: editing.notes,
+    }).eq("id", editing.id);
+    if (error) return toast.error(error.message);
+    toast.success("Factura actualizada");
+    setEditOpen(false);
+    setEditing(null);
+    load();
+  };
+
+  const editPaymentMismatch = useMemo(() => {
+    if (!editing) return false;
+    if (editing.payment_currency !== "MXN") return false;
+    return Math.abs(Number(editing.cost_mxn) - Number(editing.payment_amount)) > 0.01;
+  }, [editing]);
+
   const filteredAccounts = accounts.filter((a) => a.currency === form.payment_currency);
   const genFilteredAccounts = accounts.filter((a) => a.currency === genForm.payment_currency);
+  const editAccounts = editing ? accounts.filter((a) => a.currency === editing.payment_currency) : [];
 
   return (
     <Card className="rounded-xl shadow-md">
@@ -600,12 +638,16 @@ export function BatchInvoicesManager() {
             {filtered.map((i) => {
               const isSel = selected.has(i.id);
               const cancelled = i.status === "cancelled";
+              const mismatch =
+                i.payment_currency === "MXN" &&
+                Math.abs(Number(i.cost_mxn) - Number(i.payment_amount)) > 0.01;
               return (
                 <div key={i.id} className={cn(
                   "rounded-xl border p-3 bg-card flex items-start gap-2 shadow-sm transition-all duration-200",
                   isSel && "border-primary/50 bg-primary/5",
                   i.status === "sold" && !isSel && "opacity-70",
                   cancelled && "opacity-60",
+                  mismatch && !cancelled && "border-warning/60",
                 )}>
                   <Checkbox
                     checked={isSel}
@@ -622,6 +664,11 @@ export function BatchInvoicesManager() {
                       <p className={cn("font-semibold text-sm truncate", cancelled && "line-through")}>
                         {productById[i.product_id]?.name ?? "—"} · #{i.invoice_number}
                       </p>
+                      {mismatch && !cancelled && (
+                        <span title="El monto pagado en MXN no coincide con el costo MXN" className="shrink-0">
+                          <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {new Date(i.payment_date).toLocaleDateString("es-MX")} ·
@@ -631,17 +678,128 @@ export function BatchInvoicesManager() {
                     <p className="text-xs text-muted-foreground">
                       Pago: {Number(i.payment_amount).toFixed(2)} {i.payment_currency} ({i.payment_method === "cash" ? "efectivo" : "transf."})
                     </p>
+                    {mismatch && !cancelled && (
+                      <p className="text-[11px] text-warning font-medium mt-0.5">
+                        ⚠ Costo MXN ≠ pago MXN (diferencia ${(Number(i.cost_mxn) - Number(i.payment_amount)).toFixed(2)})
+                      </p>
+                    )}
                   </div>
-                  <Button size="icon" variant="ghost" className="h-9 w-9 text-destructive shrink-0 transition-all duration-200"
-                    disabled={i.status === "sold"}
-                    onClick={() => remove(i.id, i.status)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Button size="icon" variant="ghost" className="h-9 w-9"
+                      disabled={i.status === "sold"}
+                      onClick={() => openEdit(i)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-9 w-9 text-destructive"
+                      disabled={i.status === "sold"}
+                      onClick={() => remove(i.id, i.status)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
+
+        {/* Edit dialog */}
+        <Dialog open={editOpen} onOpenChange={(v) => { setEditOpen(v); if (!v) setEditing(null); }}>
+          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+            <DialogHeader><DialogTitle>Editar factura</DialogTitle></DialogHeader>
+            {editing && (
+              <div className="space-y-3">
+                <div>
+                  <Label>Número de factura *</Label>
+                  <Input value={editing.invoice_number}
+                    onChange={(e) => setEditing({ ...editing, invoice_number: e.target.value })}
+                    className="rounded-lg" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label>Costo USD</Label>
+                    <Input type="number" step="0.01" value={editing.cost_usd}
+                      onChange={(e) => setEditing({ ...editing, cost_usd: parseFloat(e.target.value) || 0 })}
+                      className="rounded-lg" />
+                  </div>
+                  <div>
+                    <Label>Costo MXN</Label>
+                    <Input type="number" step="0.01" value={editing.cost_mxn}
+                      onChange={(e) => setEditing({ ...editing, cost_mxn: parseFloat(e.target.value) || 0 })}
+                      className="rounded-lg" />
+                  </div>
+                </div>
+
+                <div className="border-t pt-3 space-y-2">
+                  <p className="text-sm font-semibold text-muted-foreground uppercase">Pago</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select value={editing.payment_method}
+                      onValueChange={(v: "cash" | "transfer") => setEditing({ ...editing, payment_method: v })}>
+                      <SelectTrigger className="rounded-lg"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-popover">
+                        <SelectItem value="cash">Efectivo</SelectItem>
+                        <SelectItem value="transfer">Transferencia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={editing.payment_currency}
+                      onValueChange={(v) => setEditing({ ...editing, payment_currency: v, account_id: null })}>
+                      <SelectTrigger className="rounded-lg"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-popover">
+                        {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label>Monto</Label>
+                      <Input type="number" step="0.01" value={editing.payment_amount}
+                        onChange={(e) => setEditing({ ...editing, payment_amount: parseFloat(e.target.value) || 0 })}
+                        className="rounded-lg" />
+                    </div>
+                    <div>
+                      <Label>Fecha</Label>
+                      <Input type="date" value={editing.payment_date}
+                        onChange={(e) => setEditing({ ...editing, payment_date: e.target.value })}
+                        className="rounded-lg" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Cuenta</Label>
+                    <Select value={editing.account_id ?? ""}
+                      onValueChange={(v) => setEditing({ ...editing, account_id: v })}>
+                      <SelectTrigger className="rounded-lg"><SelectValue placeholder="Cuenta" /></SelectTrigger>
+                      <SelectContent className="bg-popover">
+                        {editAccounts.length === 0 && (
+                          <SelectItem value="__none" disabled>Sin cuentas {editing.payment_currency}</SelectItem>
+                        )}
+                        {editAccounts.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Notas</Label>
+                    <Textarea rows={2} value={editing.notes ?? ""}
+                      onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+                      className="rounded-lg" />
+                  </div>
+                  {editPaymentMismatch && (
+                    <div className="rounded-lg bg-warning/10 border border-warning/40 p-2 flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                      <p className="text-xs text-warning-foreground">
+                        El costo MXN (${Number(editing.cost_mxn).toFixed(2)}) no coincide con el monto pagado MXN (${Number(editing.payment_amount).toFixed(2)}).
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
+              <Button onClick={saveEdit} className="bg-primary">Guardar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

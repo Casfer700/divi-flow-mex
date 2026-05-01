@@ -255,6 +255,7 @@ export type Database = {
           created_by: string | null
           currency: string
           currency_account_id: string | null
+          customer_name: string | null
           exchange_rate: number
           id: string
           mxn_account_id: string | null
@@ -270,6 +271,7 @@ export type Database = {
           created_by?: string | null
           currency: string
           currency_account_id?: string | null
+          customer_name?: string | null
           exchange_rate: number
           id?: string
           mxn_account_id?: string | null
@@ -285,6 +287,7 @@ export type Database = {
           created_by?: string | null
           currency?: string
           currency_account_id?: string | null
+          customer_name?: string | null
           exchange_rate?: number
           id?: string
           mxn_account_id?: string | null

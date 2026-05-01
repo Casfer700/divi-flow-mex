@@ -196,6 +196,33 @@ export function ReportsManager() {
               </div>
             ))}
           </div>
+
+          {/* Expenses breakdown — ALL sources */}
+          <div className="bg-card rounded-xl border p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Egresos por origen</p>
+              <p className="text-sm font-bold text-destructive tabular-nums">
+                ${expenseTotalMXN.toFixed(2)} MXN
+              </p>
+            </div>
+            {expenses.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">Sin egresos en el período</p>
+            ) : (
+              <div className="space-y-1">
+                {expenses.map((e) => (
+                  <div key={`${e.source}-${e.currency}`} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{EXPENSE_SOURCE_LABEL[e.source] ?? e.source}</p>
+                      <p className="text-[10px] text-muted-foreground">{e.count} mov · {e.currency}</p>
+                    </div>
+                    <p className="font-bold tabular-nums text-destructive">
+                      {e.currency === "MXN" ? "$" : ""}{e.total.toFixed(2)} {e.currency !== "MXN" && e.currency}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={exportToPDF} className="h-10 rounded-xl gap-1 text-xs font-semibold">
               <Download className="h-3.5 w-3.5" /> PDF

@@ -21,7 +21,6 @@ interface Order {
   price_type: string;
   created_at: string;
   customers: { name: string; address: string; phone_mx: string };
-  created_at: string;
 }
 
 interface ReportSummary {

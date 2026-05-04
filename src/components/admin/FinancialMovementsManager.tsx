@@ -32,6 +32,15 @@ interface Movement {
   accounts?: { name: string } | null;
 }
 
+interface OrderDetail {
+  id: string;
+  usd_amount: number;
+  eur_amount: number;
+  cup_amount: number;
+  total_mxn: number;
+  customer: { name: string } | null;
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   sale: "Venta",
   manual: "Manual",
@@ -48,7 +57,7 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
-  const [orderCustomers, setOrderCustomers] = useState<Record<string, string>>({});
+  const [orderCustomers, setOrderCustomers] = useState<Record<string, OrderDetail>>({});
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
   const [form, setForm] = useState({
@@ -75,18 +84,25 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
     const movs = (movRes.data || []) as Movement[];
     setMovements(movs);
 
-    // Enrich: for movements linked to orders, fetch customer names
+    // Enrich: for movements linked to orders, fetch customer names and currency amounts
     const orderIds = Array.from(new Set(
       movs.filter((m) => m.reference_type === "order" && m.reference_id).map((m) => m.reference_id as string),
     ));
     if (orderIds.length > 0) {
       const { data: ords } = await supabase
         .from("orders")
-        .select("id, customer:customers(name)")
+        .select("id, usd_amount, eur_amount, cup_amount, total_mxn, customer:customers(name)")
         .in("id", orderIds);
-      const map: Record<string, string> = {};
+      const map: Record<string, OrderDetail> = {};
       (ords as any[] | null)?.forEach((o) => {
-        if (o?.customer?.name) map[o.id] = o.customer.name;
+        map[o.id] = {
+          id: o.id,
+          usd_amount: o.usd_amount || 0,
+          eur_amount: o.eur_amount || 0,
+          cup_amount: o.cup_amount || 0,
+          total_mxn: o.total_mxn || 0,
+          customer: o.customer,
+        };
       });
       setOrderCustomers(map);
     } else {
@@ -197,7 +213,15 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
         <div className="divide-y">
           {filtered.map((m) => {
             const isIncome = m.movement_type === "income";
-            const orderCustomer = m.reference_type === "order" && m.reference_id ? orderCustomers[m.reference_id] : null;
+            const orderDetail = m.reference_type === "order" && m.reference_id ? orderCustomers[m.reference_id] : null;
+            const orderCustomerName = orderDetail?.customer?.name || null;
+            // Build currency breakdown for orders
+            const currencyParts: string[] = [];
+            if (orderDetail) {
+              if (orderDetail.usd_amount > 0) currencyParts.push(`$${orderDetail.usd_amount.toFixed(2)} USD`);
+              if (orderDetail.eur_amount > 0) currencyParts.push(`€${orderDetail.eur_amount.toFixed(2)} EUR`);
+              if (orderDetail.cup_amount > 0) currencyParts.push(`$${orderDetail.cup_amount.toFixed(2)} CUP`);
+            }
             return (
               <div key={m.id} className="flex items-center gap-3 px-4 py-3 transition-all duration-200 hover:bg-muted/30">
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -210,8 +234,8 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">
                     {SOURCE_LABEL[m.source] || m.source}
-                    {orderCustomer && <span className="text-foreground font-normal"> · {orderCustomer}</span>}
-                    {m.reference && !orderCustomer && <span className="text-muted-foreground font-normal"> · {m.reference}</span>}
+                    {orderCustomerName && <span className="text-foreground font-normal"> · {orderCustomerName}</span>}
+                    {m.reference && !orderCustomerName && <span className="text-muted-foreground font-normal"> · {m.reference}</span>}
                   </p>
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     {m.payment_method === "cash"
@@ -221,6 +245,9 @@ export function FinancialMovementsManager({ embedded = false }: Props) {
                     <span>·</span>
                     <span>{new Date(m.movement_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}</span>
                   </div>
+                  {currencyParts.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{currencyParts.join(" · ")}</p>
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className={`text-sm font-bold ${isIncome ? "text-success" : "text-destructive"}`}>

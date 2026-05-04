@@ -378,7 +378,7 @@ export default function Dashboard() {
       order.eur_amount > 0 ? `EUR: €${order.eur_amount.toFixed(2)}` : null,
       order.cup_amount > 0 ? `CUP: $${order.cup_amount.toFixed(2)}` : null,
     ].filter(Boolean).join("\n");
-    const paymentLabels: Record<string, string> = { pending: "Pendiente", paid: "Pagado", verified: "Verificado" };
+    const paymentLabels: Record<string, string> = { pending: "Pendiente", paid: "Pagado" };
     const deliveryLabels: Record<string, string> = { pending: "Pendiente", in_transit: "En tránsito", delivered: "Entregado" };
     let message = template.template
       .replace("{customer_name}", order.customers.name)
@@ -395,8 +395,8 @@ export default function Dashboard() {
   const getPaymentBadge = (status: string) => {
     const config: Record<string, { label: string; bg: string }> = {
       pending: { label: "Pendiente", bg: "hsl(0, 72%, 55%)" },
-      paid: { label: "Pagado", bg: "hsl(152, 69%, 41%)" },
-      verified: { label: "✓ Verificado", bg: "hsl(152, 69%, 41%)" },
+      paid: { label: "✓ Pagado", bg: "hsl(152, 69%, 41%)" },
+      verified: { label: "✓ Pagado", bg: "hsl(152, 69%, 41%)" },
     };
     const c = config[status] || config.pending;
     return <Badge className="border-0 text-[10px] h-5 px-2 rounded-full font-medium" style={{ backgroundColor: c.bg, color: "white" }}>{c.label}</Badge>;
@@ -441,7 +441,21 @@ export default function Dashboard() {
     ] : []),
   ];
 
-  const renderOrderForm = (onSubmit: (e: React.FormEvent) => void, title: string, submitLabel: string) => (
+  const selectedCustomer = customers.find((c) => c.id === formData.customer_id);
+
+  const getRetailRates = () => {
+    const retailRates: Record<string, number> = {};
+    const type = formData.price_type || "retail";
+    ["USD", "EUR", "CUP"].forEach((cur) => {
+      const rate = rates.find((r) => r.currency === cur && r.rate_type === type);
+      if (rate) retailRates[cur] = rate.sell_rate;
+    });
+    return retailRates;
+  };
+
+  const renderOrderForm = (onSubmit: (e: React.FormEvent) => void, title: string, submitLabel: string) => {
+    const currentRates = getRetailRates();
+    return (
     <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto rounded-2xl">
       <DialogHeader>
         <DialogTitle className="text-lg font-bold">{title}</DialogTitle>
@@ -478,6 +492,25 @@ export default function Dashboard() {
           </Popover>
         </div>
 
+        {/* Quick address edit when customer is selected */}
+        {selectedCustomer && (
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Dirección</Label>
+            <Input
+              value={selectedCustomer.address}
+              onChange={async (e) => {
+                const newAddr = e.target.value;
+                setCustomers((prev) => prev.map((c) => c.id === selectedCustomer.id ? { ...c, address: newAddr } : c));
+              }}
+              onBlur={async () => {
+                await supabase.from("customers").update({ address: selectedCustomer.address }).eq("id", selectedCustomer.id);
+              }}
+              className="h-10 rounded-xl text-sm"
+              placeholder="Dirección del cliente"
+            />
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tipo de precio</Label>
           <Select value={formData.price_type} onValueChange={(v) => setFormData({ ...formData, price_type: v })}>
@@ -489,6 +522,16 @@ export default function Dashboard() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* Show current rates for selected price type */}
+        {(currentRates.USD || currentRates.EUR || currentRates.CUP) && (
+          <div className="bg-muted/40 rounded-xl p-2 flex flex-wrap gap-3 text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground">Precios:</span>
+            {currentRates.USD > 0 && <span>USD: <strong className="text-foreground">${currentRates.USD.toFixed(2)}</strong></span>}
+            {currentRates.EUR > 0 && <span>EUR: <strong className="text-foreground">${currentRates.EUR.toFixed(2)}</strong></span>}
+            {currentRates.CUP > 0 && <span>CUP: <strong className="text-foreground">1/{currentRates.CUP.toFixed(2)}</strong></span>}
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-2">
           {[{ id: "usd", label: "USD", key: "usd_amount" }, { id: "eur", label: "EUR", key: "eur_amount" }, { id: "cup", label: "CUP", key: "cup_amount" }].map(c => (
@@ -545,6 +588,7 @@ export default function Dashboard() {
       </form>
     </DialogContent>
   );
+  };
 
   return (
     <Layout>

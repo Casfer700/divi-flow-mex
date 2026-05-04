@@ -122,14 +122,22 @@ export function ReportsManager() {
     ];
     autoTable(doc, { startY: 36, head: [["Concepto", "Valor"]], body: summaryData, theme: "grid", headStyles: { fillColor: [37, 99, 235] } });
     const finalY = (doc as any).lastAutoTable.finalY || 50;
-    const orderData = orders.map(o => [
-      new Date(o.created_at).toLocaleDateString("es-MX"),
-      o.customers.name,
-      `$${Number(o.total_mxn).toFixed(2)} MXN`,
-      o.payment_status === "paid" ? "Pagado" : "Pendiente",
-      o.delivery_status === "delivered" ? "Entregado" : "Pendiente",
-    ]);
-    autoTable(doc, { startY: finalY + 10, head: [["Fecha", "Cliente", "Total", "Pago", "Entrega"]], body: orderData, theme: "striped", headStyles: { fillColor: [37, 99, 235] }, styles: { fontSize: 8 } });
+    const orderData = orders.map(o => {
+      const currencies = [
+        o.usd_amount > 0 ? `$${Number(o.usd_amount).toFixed(2)} USD` : null,
+        o.eur_amount > 0 ? `€${Number(o.eur_amount).toFixed(2)} EUR` : null,
+        o.cup_amount > 0 ? `$${Number(o.cup_amount).toFixed(2)} CUP` : null,
+      ].filter(Boolean).join(", ");
+      return [
+        new Date(o.created_at).toLocaleDateString("es-MX"),
+        o.customers.name,
+        currencies || "—",
+        `$${Number(o.total_mxn).toFixed(2)} MXN`,
+        o.payment_status === "paid" ? "Pagado" : "Pendiente",
+        o.delivery_status === "delivered" ? "Entregado" : "Pendiente",
+      ];
+    });
+    autoTable(doc, { startY: finalY + 10, head: [["Fecha", "Cliente", "Divisas", "Total MXN", "Pago", "Entrega"]], body: orderData, theme: "striped", headStyles: { fillColor: [37, 99, 235] }, styles: { fontSize: 8 } });
     doc.save(`reporte_${startDate}_${endDate}.pdf`);
   };
 

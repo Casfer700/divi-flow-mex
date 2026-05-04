@@ -803,6 +803,8 @@ export type Database = {
       }
       product_batches: {
         Row: {
+          commission_mxn: number
+          commission_usd: number
           cost_mxn: number
           cost_usd: number
           created_at: string
@@ -817,6 +819,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          commission_mxn?: number
+          commission_usd?: number
           cost_mxn?: number
           cost_usd?: number
           created_at?: string
@@ -831,6 +835,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          commission_mxn?: number
+          commission_usd?: number
           cost_mxn?: number
           cost_usd?: number
           created_at?: string

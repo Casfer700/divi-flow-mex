@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Layers, Plus, Trash2, Package2, AlertTriangle } from "lucide-react";
+import { Layers, Plus, Trash2, Package2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,8 @@ interface Batch {
   remaining_quantity: number;
   cost_usd: number;
   cost_mxn: number;
+  commission_usd: number;
+  commission_mxn: number;
   supplier_invoice: string | null;
   purchase_date: string;
   notes: string | null;
@@ -44,12 +46,15 @@ export function BatchesManager() {
   const [stock, setStock] = useState<StockRow[]>([]);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showCommission, setShowCommission] = useState(false);
 
   // form
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [costUsd, setCostUsd] = useState("");
   const [costMxn, setCostMxn] = useState("");
+  const [commissionUsd, setCommissionUsd] = useState("");
+  const [commissionMxn, setCommissionMxn] = useState("");
   const [invoice, setInvoice] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
@@ -75,8 +80,12 @@ export function BatchesManager() {
 
   const reset = () => {
     setProductId(""); setQuantity(""); setCostUsd(""); setCostMxn("");
+    setCommissionUsd(""); setCommissionMxn(""); setShowCommission(false);
     setInvoice(""); setPurchaseDate(new Date().toISOString().slice(0, 10)); setNotes("");
   };
+
+  const totalCostUsd = (parseFloat(costUsd) || 0) + (parseFloat(commissionUsd) || 0);
+  const totalCostMxn = (parseFloat(costMxn) || 0) + (parseFloat(commissionMxn) || 0);
 
   const submit = async () => {
     if (!productId) return toast.error("Selecciona un producto");
@@ -88,8 +97,10 @@ export function BatchesManager() {
       product_id: productId,
       quantity: q,
       remaining_quantity: q,
-      cost_usd: parseFloat(costUsd) || 0,
-      cost_mxn: parseFloat(costMxn) || 0,
+      cost_usd: totalCostUsd,
+      cost_mxn: totalCostMxn,
+      commission_usd: parseFloat(commissionUsd) || 0,
+      commission_mxn: parseFloat(commissionMxn) || 0,
       supplier_invoice: invoice.trim() || null,
       purchase_date: purchaseDate,
       notes: notes.trim() || null,
@@ -123,7 +134,7 @@ export function BatchesManager() {
                 <Plus className="h-4 w-4" /> Nuevo lote
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Registrar lote de compra</DialogTitle></DialogHeader>
               <div className="space-y-3">
                 <div>
@@ -149,14 +160,45 @@ export function BatchesManager() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label>Costo total USD</Label>
+                    <Label>Costo producto USD</Label>
                     <Input type="number" step="0.01" value={costUsd} onChange={(e) => setCostUsd(e.target.value)} placeholder="0.00" />
                   </div>
                   <div>
-                    <Label>Costo total MXN</Label>
+                    <Label>Costo producto MXN</Label>
                     <Input type="number" step="0.01" value={costMxn} onChange={(e) => setCostMxn(e.target.value)} placeholder="0.00" />
                   </div>
                 </div>
+
+                {/* Optional supplier commission */}
+                <button
+                  type="button"
+                  onClick={() => setShowCommission(!showCommission)}
+                  className="flex items-center gap-1 text-xs text-primary font-medium hover:underline"
+                >
+                  {showCommission ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  Comisión al proveedor (opcional)
+                </button>
+                {showCommission && (
+                  <div className="grid grid-cols-2 gap-2 bg-muted/30 rounded-lg p-2">
+                    <div>
+                      <Label className="text-xs">Comisión USD</Label>
+                      <Input type="number" step="0.01" value={commissionUsd} onChange={(e) => setCommissionUsd(e.target.value)} placeholder="0.00" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Comisión MXN</Label>
+                      <Input type="number" step="0.01" value={commissionMxn} onChange={(e) => setCommissionMxn(e.target.value)} placeholder="0.00" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Total cost summary */}
+                {(showCommission && (parseFloat(commissionUsd) > 0 || parseFloat(commissionMxn) > 0)) && (
+                  <div className="bg-primary/5 rounded-lg p-2 text-xs space-y-0.5">
+                    <p className="text-muted-foreground font-medium">Costo total del lote (producto + comisión):</p>
+                    <p className="font-bold">USD: ${totalCostUsd.toFixed(2)} · MXN: ${totalCostMxn.toFixed(2)}</p>
+                  </div>
+                )}
+
                 <div>
                   <Label>Factura proveedor</Label>
                   <Input value={invoice} onChange={(e) => setInvoice(e.target.value)} placeholder="Núm. factura" />
@@ -222,6 +264,7 @@ export function BatchesManager() {
               {batches.map((b) => {
                 const empty = Number(b.remaining_quantity) === 0;
                 const partial = Number(b.remaining_quantity) > 0 && Number(b.remaining_quantity) < Number(b.quantity);
+                const hasCommission = Number(b.commission_usd) > 0 || Number(b.commission_mxn) > 0;
                 return (
                   <div key={b.id} className={cn(
                     "rounded-lg border p-2.5 bg-card flex items-start justify-between gap-2",
@@ -251,6 +294,11 @@ export function BatchesManager() {
                         <span><span className="text-muted-foreground">USD:</span> {Number(b.cost_usd).toFixed(2)}</span>
                         <span><span className="text-muted-foreground">MXN:</span> {Number(b.cost_mxn).toFixed(2)}</span>
                       </div>
+                      {hasCommission && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          Comisión: ${Number(b.commission_usd).toFixed(2)} USD / ${Number(b.commission_mxn).toFixed(2)} MXN
+                        </div>
+                      )}
                     </div>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>

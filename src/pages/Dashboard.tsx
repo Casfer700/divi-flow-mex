@@ -378,7 +378,7 @@ export default function Dashboard() {
       order.eur_amount > 0 ? `EUR: €${order.eur_amount.toFixed(2)}` : null,
       order.cup_amount > 0 ? `CUP: $${order.cup_amount.toFixed(2)}` : null,
     ].filter(Boolean).join("\n");
-    const paymentLabels: Record<string, string> = { pending: "Pendiente", paid: "Pagado", verified: "Verificado" };
+    const paymentLabels: Record<string, string> = { pending: "Pendiente", paid: "Pagado" };
     const deliveryLabels: Record<string, string> = { pending: "Pendiente", in_transit: "En tránsito", delivered: "Entregado" };
     let message = template.template
       .replace("{customer_name}", order.customers.name)
@@ -395,8 +395,8 @@ export default function Dashboard() {
   const getPaymentBadge = (status: string) => {
     const config: Record<string, { label: string; bg: string }> = {
       pending: { label: "Pendiente", bg: "hsl(0, 72%, 55%)" },
-      paid: { label: "Pagado", bg: "hsl(152, 69%, 41%)" },
-      verified: { label: "✓ Verificado", bg: "hsl(152, 69%, 41%)" },
+      paid: { label: "✓ Pagado", bg: "hsl(152, 69%, 41%)" },
+      verified: { label: "✓ Pagado", bg: "hsl(152, 69%, 41%)" },
     };
     const c = config[status] || config.pending;
     return <Badge className="border-0 text-[10px] h-5 px-2 rounded-full font-medium" style={{ backgroundColor: c.bg, color: "white" }}>{c.label}</Badge>;

@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MessageCircle, MapPin, Check, MoreVertical, Edit, Trash2, Truck, CreditCard, User, CalendarIcon } from "lucide-react";
+import { MessageCircle, MapPin, Check, MoreVertical, Edit, Trash2, Truck, CreditCard, User, CalendarIcon, Undo2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -53,8 +53,7 @@ interface OrderCardProps {
 function OrderProgressTimeline({ paymentStatus, deliveryStatus }: { paymentStatus: string; deliveryStatus: string }) {
   const steps = [
     { label: "Pago", completed: paymentStatus === "paid" || paymentStatus === "verified", active: paymentStatus === "pending" },
-    { label: "Proceso", completed: deliveryStatus === "in_transit" || deliveryStatus === "delivered", active: paymentStatus !== "pending" && deliveryStatus === "pending" },
-    { label: "Entregado", completed: deliveryStatus === "delivered", active: deliveryStatus === "in_transit" },
+    { label: "Entregado", completed: deliveryStatus === "delivered", active: (paymentStatus === "paid" || paymentStatus === "verified") && deliveryStatus !== "delivered" },
   ];
 
   return (
@@ -110,6 +109,8 @@ export function OrderCard({
 
   const isAdminOrLocal = profile?.role === "admin" || profile?.role === "local";
   const isDeliveryOwner = profile?.role === "delivery" && order.assigned_to === user?.id;
+  const isPaid = order.payment_status === "paid" || order.payment_status === "verified";
+  const isDelivered = order.delivery_status === "delivered";
 
   return (
     <div className="bg-card rounded-2xl shadow-fintech-md p-4 space-y-3 animate-fade-in">
@@ -124,7 +125,7 @@ export function OrderCard({
         </div>
 
         {/* 3-dot menu for secondary actions */}
-        {isAdminOrLocal && (onEditOrder || onDeleteOrder) && (
+        {isAdminOrLocal && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 min-h-0 flex-shrink-0">
@@ -136,6 +137,18 @@ export function OrderCard({
                 <DropdownMenuItem onClick={() => onEditOrder(order)}>
                   <Edit className="h-4 w-4 mr-2" />
                   Editar
+                </DropdownMenuItem>
+              )}
+              {isPaid && (
+                <DropdownMenuItem onClick={() => onUpdateStatus(order.id, "payment_status", "pending")}>
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Revertir pago
+                </DropdownMenuItem>
+              )}
+              {isDelivered && (
+                <DropdownMenuItem onClick={() => onUpdateStatus(order.id, "delivery_status", "pending")}>
+                  <Undo2 className="h-4 w-4 mr-2" />
+                  Revertir entrega
                 </DropdownMenuItem>
               )}
               {onDeleteOrder && (
@@ -164,7 +177,7 @@ export function OrderCard({
       {/* Badges row */}
       <div className="flex flex-wrap gap-1.5">
         <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium">
-          {order.price_type === "retail" ? "Menudeo" : "Mayoreo"}
+          {order.price_type === "retail" ? "Menudeo" : order.price_type === "wholesale" ? "Mayoreo" : "Individual"}
         </Badge>
         {order.assigned_user && (
           <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium gap-1">
@@ -214,17 +227,6 @@ export function OrderCard({
           >
             <CreditCard className="h-4 w-4" />
             Pagado
-          </Button>
-        )}
-
-        {isAdminOrLocal && order.payment_status === "paid" && (
-          <Button
-            size="sm"
-            onClick={() => onUpdateStatus(order.id, "payment_status", "verified")}
-            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium bg-success hover:bg-success/90 text-success-foreground"
-          >
-            <Check className="h-4 w-4" />
-            Verificar
           </Button>
         )}
 

@@ -258,10 +258,14 @@ export default function Dashboard() {
     if (field === "payment_status" && value === "paid") {
       sendTelegramNotification("order_paid", {
         customer_name: order.customers.name,
+        phone_mx: order.customers.phone_mx || "",
+        phone_cu: order.customers.phone_cu || "",
         total_mxn: order.total_mxn,
         usd_amount: order.usd_amount,
         eur_amount: order.eur_amount,
         cup_amount: order.cup_amount,
+        address: order.customers.address || "",
+        assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
       });
     }
     if (field === "delivery_status" && value === "delivered" && previousDeliveryStatus !== "delivered") {

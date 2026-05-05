@@ -208,6 +208,19 @@ export default function Dashboard() {
     }]);
     if (error) { toast.error("Error al crear orden"); return; }
     toast.success("Orden creada");
+    // Telegram notification
+    const customer = customers.find(c => c.id === formData.customer_id);
+    const assignedUser = users.find(u => u.id === formData.assigned_to);
+    sendTelegramNotification("new_order", {
+      customer_name: customer?.name || "—",
+      total_mxn: parseFloat(formData.total_mxn) || 0,
+      usd_amount: parseFloat(formData.usd_amount) || 0,
+      eur_amount: parseFloat(formData.eur_amount) || 0,
+      cup_amount: parseFloat(formData.cup_amount) || 0,
+      address: customer?.address || "",
+      assigned_user: assignedUser ? { role: assignedUser.role } : null,
+      delivery_notes: formData.delivery_notes || "",
+    });
     setIsDialogOpen(false);
     resetForm();
     fetchOrders();

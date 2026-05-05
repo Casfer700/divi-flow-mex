@@ -365,6 +365,11 @@ export default function POS() {
 
     setSubmitting(false);
     toast.success("Venta registrada");
+    sendTelegramNotification("pos_sale", {
+      product_name: selected.name,
+      price: `${(unit * qty).toFixed(2)} ${selected.currency}`,
+      sales_agent: agentName || "",
+    });
     clear();
     load();
   };

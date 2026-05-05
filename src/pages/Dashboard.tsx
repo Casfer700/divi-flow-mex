@@ -251,6 +251,28 @@ export default function Dashboard() {
     }
 
     toast.success("Estado actualizado");
+
+    // Telegram notifications for status changes
+    if (field === "payment_status" && value === "paid") {
+      sendTelegramNotification("order_paid", {
+        customer_name: order.customers.name,
+        total_mxn: order.total_mxn,
+        usd_amount: order.usd_amount,
+        eur_amount: order.eur_amount,
+        cup_amount: order.cup_amount,
+      });
+    }
+    if (field === "delivery_status" && value === "delivered" && previousDeliveryStatus !== "delivered") {
+      const assignedUser = order.assigned_user;
+      sendTelegramNotification("order_delivered", {
+        customer_name: order.customers.name,
+        usd_amount: order.usd_amount,
+        eur_amount: order.eur_amount,
+        cup_amount: order.cup_amount,
+        assigned_user: assignedUser ? { role: assignedUser.role } : null,
+      });
+    }
+
     fetchOrders();
   };
 

@@ -966,6 +966,36 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_config: {
+        Row: {
+          bot_token: string
+          created_at: string
+          enabled: boolean
+          id: number
+          orders_chat_id: string
+          pos_chat_id: string
+          updated_at: string
+        }
+        Insert: {
+          bot_token?: string
+          created_at?: string
+          enabled?: boolean
+          id: number
+          orders_chat_id?: string
+          pos_chat_id?: string
+          updated_at?: string
+        }
+        Update: {
+          bot_token?: string
+          created_at?: string
+          enabled?: boolean
+          id?: number
+          orders_chat_id?: string
+          pos_chat_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null

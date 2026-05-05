@@ -268,14 +268,25 @@ export default function Dashboard() {
         assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
       });
     }
+    if (field === "delivery_status" && value === "in_transit" && previousDeliveryStatus === "pending") {
+      sendTelegramNotification("order_in_transit", {
+        customer_name: order.customers.name,
+        address: order.customers.address || "",
+        usd_amount: order.usd_amount,
+        eur_amount: order.eur_amount,
+        cup_amount: order.cup_amount,
+        payment_status: order.payment_status,
+        assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
+      });
+    }
     if (field === "delivery_status" && value === "delivered" && previousDeliveryStatus !== "delivered") {
-      const assignedUser = order.assigned_user;
       sendTelegramNotification("order_delivered", {
         customer_name: order.customers.name,
         usd_amount: order.usd_amount,
         eur_amount: order.eur_amount,
         cup_amount: order.cup_amount,
-        assigned_user: assignedUser ? { role: assignedUser.role } : null,
+        payment_status: order.payment_status,
+        assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
       });
     }
 

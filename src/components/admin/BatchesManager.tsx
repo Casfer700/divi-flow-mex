@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Layers, Plus, Trash2, Package2, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
+import { Layers, Plus, Trash2, Package2, AlertTriangle, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +47,7 @@ export function BatchesManager() {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showCommission, setShowCommission] = useState(false);
+  const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
 
   // form
   const [productId, setProductId] = useState("");
@@ -82,33 +83,73 @@ export function BatchesManager() {
     setProductId(""); setQuantity(""); setCostUsd(""); setCostMxn("");
     setCommissionUsd(""); setCommissionMxn(""); setShowCommission(false);
     setInvoice(""); setPurchaseDate(new Date().toISOString().slice(0, 10)); setNotes("");
+    setEditingBatch(null);
   };
 
   const totalCostUsd = (parseFloat(costUsd) || 0) + (parseFloat(commissionUsd) || 0);
   const totalCostMxn = (parseFloat(costMxn) || 0) + (parseFloat(commissionMxn) || 0);
+
+  const openEditDialog = (batch: Batch) => {
+    setEditingBatch(batch);
+    setProductId(batch.product_id);
+    setQuantity(batch.quantity.toString());
+    setCostUsd((Number(batch.cost_usd) - Number(batch.commission_usd)).toString());
+    setCostMxn((Number(batch.cost_mxn) - Number(batch.commission_mxn)).toString());
+    setCommissionUsd(Number(batch.commission_usd).toString());
+    setCommissionMxn(Number(batch.commission_mxn).toString());
+    setShowCommission(Number(batch.commission_usd) > 0 || Number(batch.commission_mxn) > 0);
+    setInvoice(batch.supplier_invoice || "");
+    setPurchaseDate(batch.purchase_date);
+    setNotes(batch.notes || "");
+    setOpen(true);
+  };
 
   const submit = async () => {
     if (!productId) return toast.error("Selecciona un producto");
     const q = parseFloat(quantity);
     if (!q || q <= 0) return toast.error("Cantidad inválida");
     setSubmitting(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("product_batches").insert({
-      product_id: productId,
-      quantity: q,
-      remaining_quantity: q,
-      cost_usd: totalCostUsd,
-      cost_mxn: totalCostMxn,
-      commission_usd: parseFloat(commissionUsd) || 0,
-      commission_mxn: parseFloat(commissionMxn) || 0,
-      supplier_invoice: invoice.trim() || null,
-      purchase_date: purchaseDate,
-      notes: notes.trim() || null,
-      created_by: user?.id,
-    });
-    setSubmitting(false);
-    if (error) return toast.error(error.message);
-    toast.success("Lote registrado");
+
+    if (editingBatch) {
+      // Update existing batch
+      const remainingDiff = q - Number(editingBatch.quantity);
+      const newRemaining = Number(editingBatch.remaining_quantity) + remainingDiff;
+      const { error } = await supabase.from("product_batches").update({
+        product_id: productId,
+        quantity: q,
+        remaining_quantity: Math.max(0, newRemaining),
+        cost_usd: totalCostUsd,
+        cost_mxn: totalCostMxn,
+        commission_usd: parseFloat(commissionUsd) || 0,
+        commission_mxn: parseFloat(commissionMxn) || 0,
+        supplier_invoice: invoice.trim() || null,
+        purchase_date: purchaseDate,
+        notes: notes.trim() || null,
+      }).eq("id", editingBatch.id);
+      setSubmitting(false);
+      if (error) return toast.error(error.message);
+      toast.success("Lote actualizado");
+    } else {
+      // Insert new batch
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("product_batches").insert({
+        product_id: productId,
+        quantity: q,
+        remaining_quantity: q,
+        cost_usd: totalCostUsd,
+        cost_mxn: totalCostMxn,
+        commission_usd: parseFloat(commissionUsd) || 0,
+        commission_mxn: parseFloat(commissionMxn) || 0,
+        supplier_invoice: invoice.trim() || null,
+        purchase_date: purchaseDate,
+        notes: notes.trim() || null,
+        created_by: user?.id,
+      });
+      setSubmitting(false);
+      if (error) return toast.error(error.message);
+      toast.success("Lote registrado");
+    }
+
     setOpen(false);
     reset();
     load();
@@ -135,7 +176,9 @@ export function BatchesManager() {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Registrar lote de compra</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>{editingBatch ? "Editar lote" : "Registrar lote de compra"}</DialogTitle>
+              </DialogHeader>
               <div className="space-y-3">
                 <div>
                   <Label>Producto</Label>
@@ -211,7 +254,7 @@ export function BatchesManager() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
                 <Button onClick={submit} disabled={submitting}>
-                  {submitting ? "Guardando..." : "Guardar lote"}
+                  {submitting ? "Guardando..." : editingBatch ? "Guardar cambios" : "Guardar lote"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -300,27 +343,32 @@ export function BatchesManager() {
                         </div>
                       )}
                     </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive shrink-0">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle className="flex items-center gap-2">
-                            <AlertTriangle className="h-4 w-4 text-destructive" /> Eliminar lote
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Solo es posible si el lote no fue consumido por ventas. Esto no se puede deshacer.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => remove(b.id)}>Eliminar</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEditDialog(b)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="flex items-center gap-2">
+                              <AlertTriangle className="h-4 w-4 text-destructive" /> Eliminar lote
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Solo es posible si el lote no fue consumido por ventas. Esto no se puede deshacer.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => remove(b.id)}>Eliminar</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </div>
                 );
               })}

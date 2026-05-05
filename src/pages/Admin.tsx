@@ -102,6 +102,7 @@ export default function Admin() {
         <AccountsManager />
         <ExchangeRatesManager />
         <WhatsAppTemplatesManager />
+        <TelegramConfigManager />
         <ReportsManager />
       </div>
     </Layout>

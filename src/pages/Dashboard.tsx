@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { sendTelegramNotification } from "@/lib/telegram";
 import { Layout } from "@/components/Layout";
 import { OrderCard } from "@/components/OrderCard";
 import { FloatingActionButton } from "@/components/FloatingActionButton";

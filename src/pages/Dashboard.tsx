@@ -213,12 +213,14 @@ export default function Dashboard() {
     const assignedUser = users.find(u => u.id === formData.assigned_to);
     sendTelegramNotification("new_order", {
       customer_name: customer?.name || "—",
+      phone_mx: customer?.phone_mx || "",
+      phone_cu: customer?.phone_cu || "",
       total_mxn: parseFloat(formData.total_mxn) || 0,
       usd_amount: parseFloat(formData.usd_amount) || 0,
       eur_amount: parseFloat(formData.eur_amount) || 0,
       cup_amount: parseFloat(formData.cup_amount) || 0,
       address: customer?.address || "",
-      assigned_user: assignedUser ? { role: assignedUser.role } : null,
+      assigned_user: assignedUser ? { full_name: assignedUser.full_name, role: assignedUser.role } : null,
       delivery_notes: formData.delivery_notes || "",
     });
     setIsDialogOpen(false);

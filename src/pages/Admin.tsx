@@ -14,6 +14,7 @@ import { FinancialMovementsManager } from "@/components/admin/FinancialMovements
 import { ProductsManager } from "@/components/admin/ProductsManager";
 import { BatchesManager } from "@/components/admin/BatchesManager";
 import { BatchInvoicesManager } from "@/components/admin/BatchInvoicesManager";
+import { TelegramConfigManager } from "@/components/admin/TelegramConfigManager";
 import { SalesAgentsManager } from "@/components/admin/SalesAgentsManager";
 import { SalesHistoryManager } from "@/components/admin/SalesHistoryManager";
 import { Package, Truck, Clock, DollarSign, Banknote, Coins } from "lucide-react";

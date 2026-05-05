@@ -17,6 +17,8 @@ interface InventoryMovement {
   movement_type: string;
   notes: string | null;
   created_at: string;
+  reference_type: string | null;
+  reference_id: string | null;
 }
 
 interface InventoryBalance {
@@ -29,6 +31,7 @@ export function InventoryManager() {
   const { user } = useAuth();
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [balance, setBalance] = useState<InventoryBalance>({ USD: 0, EUR: 0, CUP: 0 });
+  const [orderCustomers, setOrderCustomers] = useState<Record<string, string>>({});
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ currency: "", amount: "", movement_type: "", notes: "" });
 
@@ -37,7 +40,27 @@ export function InventoryManager() {
   const fetchMovements = async () => {
     const { data, error } = await supabase.from("inventory_movements").select("*").order("created_at", { ascending: false }).limit(20);
     if (error) { toast.error("Error al cargar movimientos"); return; }
-    setMovements(data || []);
+    const movs = data || [];
+    setMovements(movs);
+
+    // Enrich order-related movements with customer names
+    const orderIds = Array.from(new Set(
+      movs.filter(m => m.reference_type === "order" && m.reference_id)
+        .map(m => m.reference_id as string)
+    ));
+    if (orderIds.length > 0) {
+      const { data: ords } = await supabase
+        .from("orders")
+        .select("id, customer:customers(name)")
+        .in("id", orderIds);
+      const map: Record<string, string> = {};
+      (ords as any[] | null)?.forEach(o => {
+        if (o.customer?.name) map[o.id] = o.customer.name;
+      });
+      setOrderCustomers(map);
+    } else {
+      setOrderCustomers({});
+    }
   };
 
   const calculateBalance = async () => {
@@ -117,26 +140,33 @@ export function InventoryManager() {
           <h3 className="text-sm font-semibold">Últimos movimientos</h3>
         </div>
         <div className="divide-y">
-          {movements.map((mov) => (
-            <div key={mov.id} className="flex items-center gap-3 px-4 py-3">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                {getMovementIcon(mov.movement_type)}
+          {movements.map((mov) => {
+            const customerName = (mov.reference_type === "order" || mov.reference_type === "order_reversal" || mov.reference_type === "order_adjustment")
+              && mov.reference_id ? orderCustomers[mov.reference_id] : null;
+            return (
+              <div key={mov.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                  {getMovementIcon(mov.movement_type)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">
+                    {mov.currency} · {getMovementTypeLabel(mov.movement_type)}
+                    {customerName && <span className="text-muted-foreground font-normal"> · {customerName}</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{mov.notes || "Sin notas"}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className={`text-sm font-semibold ${mov.movement_type === "in" ? "text-success" : mov.movement_type === "out" ? "text-destructive" : ""}`}>
+                    {mov.movement_type === "in" ? "+" : mov.movement_type === "out" ? "-" : ""}
+                    {mov.amount.toFixed(2)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(mov.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{mov.currency} · {getMovementTypeLabel(mov.movement_type)}</p>
-                <p className="text-xs text-muted-foreground truncate">{mov.notes || "Sin notas"}</p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className={`text-sm font-semibold ${mov.movement_type === "in" ? "text-success" : mov.movement_type === "out" ? "text-destructive" : ""}`}>
-                  {mov.movement_type === "in" ? "+" : mov.movement_type === "out" ? "-" : ""}
-                  {mov.amount.toFixed(2)}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {new Date(mov.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                </p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {movements.length === 0 && (
             <div className="text-center py-8 text-muted-foreground text-sm">Sin movimientos</div>
           )}

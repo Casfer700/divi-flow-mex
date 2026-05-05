@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { sendTelegramNotification } from "@/lib/telegram";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -364,6 +365,11 @@ export default function POS() {
 
     setSubmitting(false);
     toast.success("Venta registrada");
+    sendTelegramNotification("pos_sale", {
+      product_name: selected.name,
+      price: `${(unit * qty).toFixed(2)} ${selected.currency}`,
+      sales_agent: agentName || "",
+    });
     clear();
     load();
   };

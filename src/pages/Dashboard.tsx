@@ -213,12 +213,14 @@ export default function Dashboard() {
     const assignedUser = users.find(u => u.id === formData.assigned_to);
     sendTelegramNotification("new_order", {
       customer_name: customer?.name || "—",
+      phone_mx: customer?.phone_mx || "",
+      phone_cu: customer?.phone_cu || "",
       total_mxn: parseFloat(formData.total_mxn) || 0,
       usd_amount: parseFloat(formData.usd_amount) || 0,
       eur_amount: parseFloat(formData.eur_amount) || 0,
       cup_amount: parseFloat(formData.cup_amount) || 0,
       address: customer?.address || "",
-      assigned_user: assignedUser ? { role: assignedUser.role } : null,
+      assigned_user: assignedUser ? { full_name: assignedUser.full_name, role: assignedUser.role } : null,
       delivery_notes: formData.delivery_notes || "",
     });
     setIsDialogOpen(false);
@@ -256,20 +258,35 @@ export default function Dashboard() {
     if (field === "payment_status" && value === "paid") {
       sendTelegramNotification("order_paid", {
         customer_name: order.customers.name,
+        phone_mx: order.customers.phone_mx || "",
+        phone_cu: order.customers.phone_cu || "",
         total_mxn: order.total_mxn,
         usd_amount: order.usd_amount,
         eur_amount: order.eur_amount,
         cup_amount: order.cup_amount,
+        address: order.customers.address || "",
+        assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
+      });
+    }
+    if (field === "delivery_status" && value === "in_transit" && previousDeliveryStatus === "pending") {
+      sendTelegramNotification("order_in_transit", {
+        customer_name: order.customers.name,
+        address: order.customers.address || "",
+        usd_amount: order.usd_amount,
+        eur_amount: order.eur_amount,
+        cup_amount: order.cup_amount,
+        payment_status: order.payment_status,
+        assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
       });
     }
     if (field === "delivery_status" && value === "delivered" && previousDeliveryStatus !== "delivered") {
-      const assignedUser = order.assigned_user;
       sendTelegramNotification("order_delivered", {
         customer_name: order.customers.name,
         usd_amount: order.usd_amount,
         eur_amount: order.eur_amount,
         cup_amount: order.cup_amount,
-        assigned_user: assignedUser ? { role: assignedUser.role } : null,
+        payment_status: order.payment_status,
+        assigned_user: order.assigned_user ? { full_name: order.assigned_user.full_name } : null,
       });
     }
 

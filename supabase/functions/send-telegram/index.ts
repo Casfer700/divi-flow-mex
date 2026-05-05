@@ -36,8 +36,7 @@ Deno.serve(async (req) => {
     if (event === 'pos_sale') {
       chatId = config.pos_chat_id || null;
     } else if (event === 'test') {
-      // For test messages, chat_id comes from data
-      chatId = data.chat_id || null;
+      chatId = data.chat_type === 'pos' ? (config.pos_chat_id || null) : (config.orders_chat_id || null);
     } else {
       chatId = config.orders_chat_id || null;
     }

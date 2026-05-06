@@ -175,7 +175,7 @@ export default function POS() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return products;
+    if (!q || q.length < 3) return q.length === 0 ? products : [];
     return products.filter(
       (p) => p.name.toLowerCase().includes(q) || (p.category ?? "").toLowerCase().includes(q),
     );

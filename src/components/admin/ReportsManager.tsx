@@ -65,6 +65,7 @@ export function ReportsManager() {
   const [summary, setSummary] = useState<ReportSummary | null>(null);
   const [expenses, setExpenses] = useState<ExpenseBreakdown[]>([]);
   const [expenseTotalMXN, setExpenseTotalMXN] = useState(0);
+  const [currencyReport, setCurrencyReport] = useState<CurrencyBreakdown[]>([]);
 
   const generateReport = async () => {
     if (!startDate || !endDate) { toast.error("Selecciona un rango de fechas"); return; }

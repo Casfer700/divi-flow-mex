@@ -247,6 +247,31 @@ export function ReportsManager() {
               </div>
             )}
           </div>
+
+          {/* Per-currency financial summary — NO conversion */}
+          {currencyReport.length > 0 && (
+            <div className="bg-card rounded-xl border p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Resumen por divisa (sin conversión)</p>
+              <div className="space-y-1">
+                {currencyReport.map((c) => (
+                  <div key={c.currency} className="grid grid-cols-4 gap-1 text-xs items-center py-1 border-b last:border-0">
+                    <span className="font-bold">{c.currency}</span>
+                    <span className="text-success text-right">+{c.income.toFixed(2)}</span>
+                    <span className="text-destructive text-right">-{c.expense.toFixed(2)}</span>
+                    <span className={`text-right font-bold ${c.net >= 0 ? "text-success" : "text-destructive"}`}>
+                      {c.net >= 0 ? "+" : ""}{c.net.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-4 gap-1 text-[10px] text-muted-foreground">
+                <span></span>
+                <span className="text-right">Ingresos</span>
+                <span className="text-right">Egresos</span>
+                <span className="text-right">Neto</span>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={exportToPDF} className="h-10 rounded-xl gap-1 text-xs font-semibold">
               <Download className="h-3.5 w-3.5" /> PDF

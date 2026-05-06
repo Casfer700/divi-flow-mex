@@ -89,29 +89,37 @@ export function ReportsManager() {
       deliveredOrders: data.filter(o => o.delivery_status === "delivered").length,
     });
 
-    // Pull ALL expenses regardless of source from financial_movements
-    const { data: expData, error: expErr } = await supabase
+    // Pull ALL financial movements for currency breakdown
+    const { data: allMovData } = await supabase
       .from("financial_movements")
-      .select("source, currency, amount")
-      .eq("movement_type", "expense")
+      .select("movement_type, source, currency, amount")
       .gte("movement_date", new Date(startDate).toISOString())
       .lte("movement_date", new Date(endDate + "T23:59:59").toISOString());
-    if (expErr) {
-      toast.error("Error al cargar egresos");
-    } else {
-      const map = new Map<string, ExpenseBreakdown>();
-      let totalMxn = 0;
-      (expData || []).forEach((m: any) => {
-        const key = `${m.source}::${m.currency}`;
-        if (!map.has(key)) map.set(key, { source: m.source, currency: m.currency, total: 0, count: 0 });
-        const row = map.get(key)!;
-        row.total += Number(m.amount);
+
+    const expMap = new Map<string, ExpenseBreakdown>();
+    let totalMxn = 0;
+    const curMap: Record<string, CurrencyBreakdown> = {};
+    (allMovData || []).forEach((m: any) => {
+      const amt = Number(m.amount);
+      const cur = m.currency;
+      if (!curMap[cur]) curMap[cur] = { currency: cur, income: 0, expense: 0, net: 0 };
+      if (m.movement_type === "income") {
+        curMap[cur].income += amt;
+        curMap[cur].net += amt;
+      } else {
+        curMap[cur].expense += amt;
+        curMap[cur].net -= amt;
+        const key = `${m.source}::${cur}`;
+        if (!expMap.has(key)) expMap.set(key, { source: m.source, currency: cur, total: 0, count: 0 });
+        const row = expMap.get(key)!;
+        row.total += amt;
         row.count += 1;
-        if (m.currency === "MXN") totalMxn += Number(m.amount);
-      });
-      setExpenses(Array.from(map.values()).sort((a, b) => b.total - a.total));
-      setExpenseTotalMXN(totalMxn);
-    }
+        if (cur === "MXN") totalMxn += amt;
+      }
+    });
+    setExpenses(Array.from(expMap.values()).sort((a, b) => b.total - a.total));
+    setExpenseTotalMXN(totalMxn);
+    setCurrencyReport(Object.values(curMap).sort((a, b) => b.net - a.net));
 
     toast.success(`Reporte: ${data.length} órdenes`);
   };

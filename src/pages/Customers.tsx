@@ -31,6 +31,10 @@ export default function Customers() {
     name: "", phone_mx: "", phone_cu: "", address: "", notes: "",
   });
 
+  useEffect(() => {
+    if (profile && profile.role !== "admin") navigate("/");
+  }, [profile, navigate]);
+
   useEffect(() => { fetchCustomers(); }, []);
 
   const fetchCustomers = async () => {

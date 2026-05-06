@@ -15,15 +15,18 @@ export function Layout({ children }: LayoutProps) {
 
   const navigation = [
     { name: "Órdenes", href: "/", icon: Package },
-    { name: "Clientes", href: "/customers", icon: Users },
   ];
+
+  if (profile?.role === "admin") {
+    navigation.push({ name: "Clientes", href: "/customers", icon: Users });
+  }
 
   if (profile?.role === "admin" || profile?.role === "local") {
     navigation.push({ name: "POS", href: "/pos", icon: ShoppingCart });
-    navigation.push({ name: "Finanzas", href: "/finance", icon: Wallet });
   }
 
   if (profile?.role === "admin") {
+    navigation.push({ name: "Finanzas", href: "/finance", icon: Wallet });
     navigation.push({ name: "Owner", href: "/owner", icon: Activity });
     navigation.push({ name: "Admin", href: "/admin", icon: Settings });
   }

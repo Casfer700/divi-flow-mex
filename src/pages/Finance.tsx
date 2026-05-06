@@ -16,12 +16,12 @@ export default function Finance() {
   const [tab, setTab] = useState<Tab>("all");
 
   useEffect(() => {
-    if (profile && profile.role !== "admin" && profile.role !== "local") {
+    if (profile && profile.role !== "admin") {
       navigate("/");
     }
   }, [profile, navigate]);
 
-  if (profile && profile.role !== "admin" && profile.role !== "local") return null;
+  if (profile && profile.role !== "admin") return null;
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "all", label: "Todos" },

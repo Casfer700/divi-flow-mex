@@ -175,7 +175,7 @@ export default function POS() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return products;
+    if (!q || q.length < 3) return q.length === 0 ? products : [];
     return products.filter(
       (p) => p.name.toLowerCase().includes(q) || (p.category ?? "").toLowerCase().includes(q),
     );
@@ -359,6 +359,39 @@ export default function POS() {
       await supabase.from("batch_invoices")
         .update({ status: "sold", sale_id: saleRow.id })
         .eq("id", selectedInvoiceId);
+    }
+
+    // Create currency lots for foreign currency cash payments (FIFO cost tracking)
+    const foreignCashPayments = payments.filter(
+      p => p.currency !== "MXN" && ["USD", "EUR", "CUP"].includes(p.currency) && parseFloat(p.amount) > 0
+    );
+    if (foreignCashPayments.length > 0) {
+      // Get COGS for this sale to compute proportional cost
+      const { data: consData } = await supabase
+        .from("pos_sale_batch_consumption")
+        .select("total_cost_mxn")
+        .eq("sale_id", saleRow.id);
+      const totalCostMxn = (consData || []).reduce((s, c) => s + Number(c.total_cost_mxn || 0), 0);
+      const totalMxnEquiv = paymentRows.reduce((s, r) => s + r.amount_mxn, 0);
+
+      const lotInserts = foreignCashPayments.map(p => {
+        const amt = parseFloat(p.amount);
+        const mxnEq = toMXN(amt, p.currency, rates);
+        const proportion = totalMxnEquiv > 0 ? mxnEq / totalMxnEquiv : 0;
+        const costMxn = totalCostMxn * proportion;
+        return {
+          currency: p.currency,
+          quantity: amt,
+          remaining_quantity: amt,
+          cost_mxn_total: costMxn,
+          cost_mxn_per_unit: amt > 0 ? costMxn / amt : 0,
+          source: "pos_sale",
+          reference_id: saleRow.id,
+          notes: `POS - ${selected.name}`,
+          created_by: user?.id,
+        };
+      });
+      await supabase.from("currency_lots").insert(lotInserts);
     }
 
     if (payments[0].account_id) localStorage.setItem(LS_ACCOUNT, payments[0].account_id);

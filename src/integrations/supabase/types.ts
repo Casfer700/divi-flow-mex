@@ -314,6 +314,101 @@ export type Database = {
           },
         ]
       }
+      currency_lot_consumption: {
+        Row: {
+          cost_mxn_per_unit: number
+          created_at: string
+          currency: string
+          exchange_id: string | null
+          fx_profit: number
+          id: string
+          lot_id: string
+          mxn_received: number
+          order_id: string | null
+          quantity: number
+          total_cost_mxn: number
+        }
+        Insert: {
+          cost_mxn_per_unit: number
+          created_at?: string
+          currency: string
+          exchange_id?: string | null
+          fx_profit?: number
+          id?: string
+          lot_id: string
+          mxn_received?: number
+          order_id?: string | null
+          quantity: number
+          total_cost_mxn: number
+        }
+        Update: {
+          cost_mxn_per_unit?: number
+          created_at?: string
+          currency?: string
+          exchange_id?: string | null
+          fx_profit?: number
+          id?: string
+          lot_id?: string
+          mxn_received?: number
+          order_id?: string | null
+          quantity?: number
+          total_cost_mxn?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "currency_lot_consumption_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "currency_lots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      currency_lots: {
+        Row: {
+          cost_mxn_per_unit: number
+          cost_mxn_total: number
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          notes: string | null
+          quantity: number
+          reference_id: string | null
+          remaining_quantity: number
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          cost_mxn_per_unit?: number
+          cost_mxn_total?: number
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          id?: string
+          notes?: string | null
+          quantity: number
+          reference_id?: string | null
+          remaining_quantity: number
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          cost_mxn_per_unit?: number
+          cost_mxn_total?: number
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          notes?: string | null
+          quantity?: number
+          reference_id?: string | null
+          remaining_quantity?: number
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string
@@ -1068,6 +1163,19 @@ export type Database = {
       consume_batches_fifo: {
         Args: { _product_id: string; _quantity: number; _sale_id: string }
         Returns: number
+      }
+      consume_currency_lots_fifo: {
+        Args: {
+          _currency: string
+          _exchange_id?: string
+          _mxn_received?: number
+          _order_id?: string
+          _quantity: number
+        }
+        Returns: {
+          total_cost_mxn: number
+          total_fx_profit: number
+        }[]
       }
       get_user_role: {
         Args: { _user_id: string }

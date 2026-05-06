@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,8 @@ interface Customer {
 }
 
 export default function Customers() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -28,6 +30,10 @@ export default function Customers() {
   const [formData, setFormData] = useState({
     name: "", phone_mx: "", phone_cu: "", address: "", notes: "",
   });
+
+  useEffect(() => {
+    if (profile && profile.role !== "admin") navigate("/");
+  }, [profile, navigate]);
 
   useEffect(() => { fetchCustomers(); }, []);
 

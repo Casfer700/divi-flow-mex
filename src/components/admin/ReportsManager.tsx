@@ -34,6 +34,13 @@ interface ReportSummary {
   deliveredOrders: number;
 }
 
+interface CurrencyBreakdown {
+  currency: string;
+  income: number;
+  expense: number;
+  net: number;
+}
+
 interface ExpenseBreakdown {
   source: string;
   currency: string;
@@ -58,6 +65,7 @@ export function ReportsManager() {
   const [summary, setSummary] = useState<ReportSummary | null>(null);
   const [expenses, setExpenses] = useState<ExpenseBreakdown[]>([]);
   const [expenseTotalMXN, setExpenseTotalMXN] = useState(0);
+  const [currencyReport, setCurrencyReport] = useState<CurrencyBreakdown[]>([]);
 
   const generateReport = async () => {
     if (!startDate || !endDate) { toast.error("Selecciona un rango de fechas"); return; }
@@ -81,29 +89,37 @@ export function ReportsManager() {
       deliveredOrders: data.filter(o => o.delivery_status === "delivered").length,
     });
 
-    // Pull ALL expenses regardless of source from financial_movements
-    const { data: expData, error: expErr } = await supabase
+    // Pull ALL financial movements for currency breakdown
+    const { data: allMovData } = await supabase
       .from("financial_movements")
-      .select("source, currency, amount")
-      .eq("movement_type", "expense")
+      .select("movement_type, source, currency, amount")
       .gte("movement_date", new Date(startDate).toISOString())
       .lte("movement_date", new Date(endDate + "T23:59:59").toISOString());
-    if (expErr) {
-      toast.error("Error al cargar egresos");
-    } else {
-      const map = new Map<string, ExpenseBreakdown>();
-      let totalMxn = 0;
-      (expData || []).forEach((m: any) => {
-        const key = `${m.source}::${m.currency}`;
-        if (!map.has(key)) map.set(key, { source: m.source, currency: m.currency, total: 0, count: 0 });
-        const row = map.get(key)!;
-        row.total += Number(m.amount);
+
+    const expMap = new Map<string, ExpenseBreakdown>();
+    let totalMxn = 0;
+    const curMap: Record<string, CurrencyBreakdown> = {};
+    (allMovData || []).forEach((m: any) => {
+      const amt = Number(m.amount);
+      const cur = m.currency;
+      if (!curMap[cur]) curMap[cur] = { currency: cur, income: 0, expense: 0, net: 0 };
+      if (m.movement_type === "income") {
+        curMap[cur].income += amt;
+        curMap[cur].net += amt;
+      } else {
+        curMap[cur].expense += amt;
+        curMap[cur].net -= amt;
+        const key = `${m.source}::${cur}`;
+        if (!expMap.has(key)) expMap.set(key, { source: m.source, currency: cur, total: 0, count: 0 });
+        const row = expMap.get(key)!;
+        row.total += amt;
         row.count += 1;
-        if (m.currency === "MXN") totalMxn += Number(m.amount);
-      });
-      setExpenses(Array.from(map.values()).sort((a, b) => b.total - a.total));
-      setExpenseTotalMXN(totalMxn);
-    }
+        if (cur === "MXN") totalMxn += amt;
+      }
+    });
+    setExpenses(Array.from(expMap.values()).sort((a, b) => b.total - a.total));
+    setExpenseTotalMXN(totalMxn);
+    setCurrencyReport(Object.values(curMap).sort((a, b) => b.net - a.net));
 
     toast.success(`Reporte: ${data.length} órdenes`);
   };
@@ -231,6 +247,31 @@ export function ReportsManager() {
               </div>
             )}
           </div>
+
+          {/* Per-currency financial summary — NO conversion */}
+          {currencyReport.length > 0 && (
+            <div className="bg-card rounded-xl border p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Resumen por divisa (sin conversión)</p>
+              <div className="space-y-1">
+                {currencyReport.map((c) => (
+                  <div key={c.currency} className="grid grid-cols-4 gap-1 text-xs items-center py-1 border-b last:border-0">
+                    <span className="font-bold">{c.currency}</span>
+                    <span className="text-success text-right">+{c.income.toFixed(2)}</span>
+                    <span className="text-destructive text-right">-{c.expense.toFixed(2)}</span>
+                    <span className={`text-right font-bold ${c.net >= 0 ? "text-success" : "text-destructive"}`}>
+                      {c.net >= 0 ? "+" : ""}{c.net.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-4 gap-1 text-[10px] text-muted-foreground">
+                <span></span>
+                <span className="text-right">Ingresos</span>
+                <span className="text-right">Egresos</span>
+                <span className="text-right">Neto</span>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={exportToPDF} className="h-10 rounded-xl gap-1 text-xs font-semibold">
               <Download className="h-3.5 w-3.5" /> PDF

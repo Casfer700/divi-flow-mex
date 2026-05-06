@@ -314,7 +314,7 @@ export function OwnerDashboard() {
         .from("pos_sale_batch_consumption").select("sale_id, total_cost_mxn")
         .in("sale_id", saleIds);
       (cons || []).forEach(c => {
-        consBysale[c.sale_id] = (consByale[c.sale_id] || 0) + Number(c.total_cost_mxn || 0);
+        consBysale[c.sale_id] = (consBysale[c.sale_id] || 0) + Number(c.total_cost_mxn || 0);
       });
     }
 
@@ -323,10 +323,10 @@ export function OwnerDashboard() {
       product: s.product_name,
       invoice: "",
       salePrice: Number(s.total_amount),
-      cost: consByale[s.id] || 0,
+      cost: consBysale[s.id] || 0,
       commission: Number(s.commission_mxn || 0),
       commissionCurrency: s.commission_currency || "MXN",
-      profit: Number(s.total_amount) - (consByale[s.id] || 0) - Number(s.commission_mxn || 0),
+      profit: Number(s.total_amount) - (consBysale[s.id] || 0) - Number(s.commission_mxn || 0),
       currency: s.currency,
     }));
     setAgentDetails(details);

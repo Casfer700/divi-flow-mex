@@ -1,24 +1,23 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { startOfDay, endOfDay, format } from "date-fns";
+import { startOfDay, endOfDay, format, startOfMonth, endOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   TrendingUp, TrendingDown, DollarSign, Package, Users, AlertTriangle,
   Wallet, Coins, Banknote, Activity, ShoppingBag, AlertCircle, Info,
+  Download, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarIcon } from "lucide-react";
-import { NotificationCenter, AppAlert } from "@/components/NotificationCenter";
-
-// Reuse alert scanning logic by re-implementing a hook-friendly version
-// (NotificationCenter component shows the bell; here we render a verbose detail list)
+import { NotificationCenter } from "@/components/NotificationCenter";
 
 interface DailySummary {
   totalSalesMxn: number;
-  profit: number;
+  productProfit: number;
+  fxProfit: number;
   orderCount: number;
   posCount: number;
   cogs: number;
@@ -37,78 +36,94 @@ interface CurrencyAgg { currency: string; revenueMxn: number; cogsMxn: number; p
 
 interface AgentRow {
   agent: string;
+  agentId: string | null;
   sales: number;
   revenueMxn: number;
   cogsMxn: number;
   profitMxn: number;
-  commission: number;
+  commissionMxn: number;
+  commissionUsd: number;
 }
-
-interface LossBreakdown { commissions: number; fxLoss: number; expenses: number; }
 
 interface StockAlertRow { product_name: string; stock: number; severity: "critical" | "warning"; }
 
-interface VerboseAlert extends AppAlert { explanation: string; }
+interface VerboseAlert {
+  id: string;
+  severity: "critical" | "warning" | "info";
+  category: string;
+  title: string;
+  description: string;
+  amount?: string;
+  explanation: string;
+}
 
-const COMMISSION_RATE = 0.05; // 5% default; adjust if you store per-agent rates
+interface AgentSaleDetail {
+  date: string;
+  product: string;
+  invoice: string;
+  salePrice: number;
+  cost: number;
+  commission: number;
+  commissionCurrency: string;
+  profit: number;
+  currency: string;
+}
 
 export function OwnerDashboard() {
   const [date, setDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<DailySummary>({
-    totalSalesMxn: 0, profit: 0, orderCount: 0, posCount: 0, cogs: 0,
+    totalSalesMxn: 0, productProfit: 0, fxProfit: 0, orderCount: 0, posCount: 0, cogs: 0,
   });
   const [cashRows, setCashRows] = useState<CashRow[]>([]);
-  const [losses, setLosses] = useState<LossBreakdown>({ commissions: 0, fxLoss: 0, expenses: 0 });
   const [currencyAgg, setCurrencyAgg] = useState<CurrencyAgg[]>([]);
   const [stockAlerts, setStockAlerts] = useState<StockAlertRow[]>([]);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [verboseAlerts, setVerboseAlerts] = useState<VerboseAlert[]>([]);
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [agentDetails, setAgentDetails] = useState<AgentSaleDetail[]>([]);
+  const [loadingAgent, setLoadingAgent] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const start = startOfDay(date).toISOString();
     const end = endOfDay(date).toISOString();
 
-    // ---- Orders for the day
     const { data: orders } = await supabase
-      .from("orders")
-      .select("*")
+      .from("orders").select("*")
       .gte("created_at", start).lte("created_at", end);
 
-    // ---- POS sales for the day
     const { data: posSales } = await supabase
-      .from("pos_sales")
-      .select("*")
+      .from("pos_sales").select("*")
       .gte("sale_date", start).lte("sale_date", end);
 
-    // ---- Batch consumption joined to those POS sales (for COGS/profit)
     const posIds = (posSales || []).map(s => s.id);
     let consumption: any[] = [];
     if (posIds.length > 0) {
       const { data } = await supabase
-        .from("pos_sale_batch_consumption")
-        .select("*")
+        .from("pos_sale_batch_consumption").select("*")
         .in("sale_id", posIds);
       consumption = data || [];
     }
 
-    // ---- Financial movements for the day
     const { data: movements } = await supabase
-      .from("financial_movements")
-      .select("*")
+      .from("financial_movements").select("*")
       .gte("movement_date", start).lte("movement_date", end);
 
-    // ---- Exchange rates (current sell)
     const { data: rates } = await supabase
-      .from("exchange_rates")
-      .select("currency, sell_rate")
+      .from("exchange_rates").select("currency, sell_rate")
       .order("updated_at", { ascending: false });
     const sellRate: Record<string, number> = {};
     rates?.forEach((r: any) => { if (!(r.currency in sellRate)) sellRate[r.currency] = Number(r.sell_rate); });
     sellRate["MXN"] = 1;
 
-    // ---- DAILY SUMMARY
+    // FX profit from currency_lot_consumption
+    const { data: fxConsumption } = await supabase
+      .from("currency_lot_consumption").select("fx_profit")
+      .gte("created_at", start).lte("created_at", end);
+    const fxProfit = (fxConsumption || []).reduce((s, c: any) => s + Number(c.fx_profit || 0), 0);
+
+    // DAILY SUMMARY
     const ordersRevenue = (orders || []).reduce((s, o: any) => s + Number(o.total_mxn || 0), 0);
     const posRevenue = (posSales || []).reduce((s, p: any) => {
       const rate = sellRate[p.currency] || 1;
@@ -116,30 +131,26 @@ export function OwnerDashboard() {
     }, 0);
     const totalSalesMxn = ordersRevenue + posRevenue;
     const cogs = consumption.reduce((s, c) => s + Number(c.total_cost_mxn || 0), 0);
-    const profit = totalSalesMxn - cogs;
 
-    setSummary({
-      totalSalesMxn,
-      profit,
-      cogs,
-      orderCount: (orders || []).length,
-      posCount: (posSales || []).length,
-    });
+    // Real commissions from pos_sales (not estimated)
+    const realCommissions = (posSales || []).reduce((s, p: any) => {
+      return s + Number(p.commission_mxn || 0);
+    }, 0);
 
-    // ---- CASH ANALYSIS — open or most recent closed session
+    const productProfit = totalSalesMxn - cogs - realCommissions;
+
+    setSummary({ totalSalesMxn, productProfit, fxProfit, cogs, orderCount: (orders || []).length, posCount: (posSales || []).length });
+
+    // CASH ANALYSIS
     const { data: sessions } = await supabase
-      .from("cash_sessions")
-      .select("*")
-      .order("opened_at", { ascending: false })
-      .limit(1);
+      .from("cash_sessions").select("*")
+      .order("opened_at", { ascending: false }).limit(1);
     const session = sessions?.[0];
     let cashList: CashRow[] = [];
     if (session) {
       const { data: balances } = await supabase
-        .from("cash_session_balances")
-        .select("*, accounts(name)")
+        .from("cash_session_balances").select("*, accounts(name)")
         .eq("session_id", session.id);
-      // Recompute expected for open sessions in real time
       const rows = await Promise.all((balances || []).map(async (b: any) => {
         let expected = Number(b.expected_closing || 0);
         if (session.status === "open") {
@@ -151,10 +162,8 @@ export function OwnerDashboard() {
         const actual = b.actual_closing != null ? Number(b.actual_closing) : null;
         return {
           account_name: b.accounts?.name || "Cuenta",
-          currency: b.currency,
-          opening: Number(b.opening_balance || 0),
-          expected,
-          actual,
+          currency: b.currency, opening: Number(b.opening_balance || 0),
+          expected, actual,
           difference: actual != null ? actual - expected : null,
         } as CashRow;
       }));
@@ -162,16 +171,7 @@ export function OwnerDashboard() {
     }
     setCashRows(cashList);
 
-    // ---- LOSS DETECTION
-    // Commissions = COMMISSION_RATE * sum of POS sales by agent (assumes paid out as expense later)
-    const commissionsTotal = (posSales || []).reduce((s, p: any) => {
-      if (!p.sales_agent) return s;
-      const rate = sellRate[p.currency] || 1;
-      const inMxn = Number(p.total_amount || 0) * (p.currency === "MXN" ? 1 : rate);
-      return s + inMxn * COMMISSION_RATE;
-    }, 0);
-
-    // Expenses from financial movements
+    // EXPENSES
     const expensesTotal = (movements || [])
       .filter((m: any) => m.movement_type === "expense")
       .reduce((s, m: any) => {
@@ -179,23 +179,7 @@ export function OwnerDashboard() {
         return s + Number(m.amount || 0) * (m.currency === "MXN" ? 1 : rate);
       }, 0);
 
-    // FX losses: POS payments where exchange_rate < market * 0.95
-    const { data: posPayments } = await supabase
-      .from("pos_sale_payments")
-      .select("currency, amount, exchange_rate, created_at")
-      .neq("currency", "MXN")
-      .gte("created_at", start).lte("created_at", end);
-    let fxLossTotal = 0;
-    posPayments?.forEach((p: any) => {
-      const market = sellRate[p.currency];
-      if (!market) return;
-      const used = Number(p.exchange_rate || 0);
-      if (used < market * 0.95) fxLossTotal += (market - used) * Number(p.amount || 0);
-    });
-
-    setLosses({ commissions: commissionsTotal, fxLoss: fxLossTotal, expenses: expensesTotal });
-
-    // ---- CURRENCY ANALYSIS — group POS sales by currency, compute revenue / COGS / profit in MXN
+    // CURRENCY ANALYSIS
     const consBySale: Record<string, number> = {};
     consumption.forEach(c => {
       consBySale[c.sale_id] = (consBySale[c.sale_id] || 0) + Number(c.total_cost_mxn || 0);
@@ -210,7 +194,6 @@ export function OwnerDashboard() {
       byCur[p.currency].cogsMxn += c;
       byCur[p.currency].profitMxn += rev - c;
     });
-    // Add orders as MXN revenue (orders settled in MXN)
     if (ordersRevenue > 0) {
       if (!byCur["MXN"]) byCur["MXN"] = { currency: "MXN", revenueMxn: 0, cogsMxn: 0, profitMxn: 0 };
       byCur["MXN"].revenueMxn += ordersRevenue;
@@ -218,10 +201,8 @@ export function OwnerDashboard() {
     }
     setCurrencyAgg(Object.values(byCur).sort((a, b) => b.revenueMxn - a.revenueMxn));
 
-    // ---- INVENTORY STATUS — low or missing stock
-    const { data: stock } = await supabase
-      .from("product_stock")
-      .select("product_name, stock");
+    // INVENTORY STATUS
+    const { data: stock } = await supabase.from("product_stock").select("product_name, stock");
     const stockList: StockAlertRow[] = [];
     stock?.forEach((s: any) => {
       const qty = Number(s.stock || 0);
@@ -230,23 +211,30 @@ export function OwnerDashboard() {
     });
     setStockAlerts(stockList.sort((a, b) => a.stock - b.stock).slice(0, 12));
 
-    // ---- AGENT PERFORMANCE
+    // AGENT PERFORMANCE — use REAL commissions
     const agentMap: Record<string, AgentRow> = {};
     (posSales || []).forEach((p: any) => {
       const name = (p.sales_agent || "Sin agente").trim() || "Sin agente";
       const rate = sellRate[p.currency] || 1;
       const rev = Number(p.total_amount || 0) * (p.currency === "MXN" ? 1 : rate);
       const c = consBySale[p.id] || 0;
-      if (!agentMap[name]) agentMap[name] = { agent: name, sales: 0, revenueMxn: 0, cogsMxn: 0, profitMxn: 0, commission: 0 };
+      const commMxn = Number(p.commission_mxn || 0);
+      // If commission_currency is USD, show separately
+      const commCurrency = p.commission_currency || "MXN";
+      if (!agentMap[name]) agentMap[name] = { agent: name, agentId: p.sales_agent_id || null, sales: 0, revenueMxn: 0, cogsMxn: 0, profitMxn: 0, commissionMxn: 0, commissionUsd: 0 };
       agentMap[name].sales += 1;
       agentMap[name].revenueMxn += rev;
       agentMap[name].cogsMxn += c;
-      agentMap[name].profitMxn += rev - c;
-      agentMap[name].commission += rev * COMMISSION_RATE;
+      if (commCurrency === "USD") {
+        agentMap[name].commissionUsd += commMxn;
+      } else {
+        agentMap[name].commissionMxn += commMxn;
+      }
+      agentMap[name].profitMxn += rev - c - commMxn;
     });
     setAgents(Object.values(agentMap).sort((a, b) => b.revenueMxn - a.revenueMxn));
 
-    // ---- ALERT DETAILS (verbose) — reuse logic patterns
+    // ALERTS
     const v: VerboseAlert[] = [];
     cashList.forEach((c) => {
       if (c.difference != null && Math.abs(c.difference) > 0.01) {
@@ -259,22 +247,11 @@ export function OwnerDashboard() {
           description: `${c.account_name} (${c.currency})`,
           amount: `${c.difference >= 0 ? "+" : ""}${c.difference.toFixed(2)} ${c.currency}`,
           explanation: isMissing
-            ? `Se esperaba ${c.expected.toFixed(2)} ${c.currency} pero se contó ${c.actual?.toFixed(2)}. Esto suele indicar pagos no registrados, retiros sin documentar o errores de conteo.`
-            : `Se contó ${c.actual?.toFixed(2)} ${c.currency} pero se esperaba ${c.expected.toFixed(2)}. Suele deberse a depósitos olvidados de registrar o cobros en exceso.`,
+            ? `Se esperaba ${c.expected.toFixed(2)} ${c.currency} pero se contó ${c.actual?.toFixed(2)}.`
+            : `Se contó ${c.actual?.toFixed(2)} ${c.currency} pero se esperaba ${c.expected.toFixed(2)}.`,
         });
       }
     });
-    if (losses.fxLoss > 0 || fxLossTotal > 0) {
-      v.push({
-        id: "fx-summary",
-        severity: fxLossTotal > 100 ? "critical" : "warning",
-        category: "fx_loss",
-        title: "Pérdida por conversión de divisas",
-        description: "Pagos POS en moneda extranjera",
-        amount: `-$${fxLossTotal.toFixed(2)} MXN`,
-        explanation: "Algunos pagos se aceptaron a una tasa más baja que el mercado actual. Revisa las tasas de cambio en Admin.",
-      });
-    }
     stockList.slice(0, 5).forEach((s) => {
       v.push({
         id: `stock-${s.product_name}`,
@@ -284,41 +261,95 @@ export function OwnerDashboard() {
         description: s.product_name,
         amount: `${s.stock} u`,
         explanation: s.stock <= 0
-          ? "Este producto no tiene unidades disponibles y bloqueará nuevas ventas. Registra un nuevo lote en Lotes."
-          : `Quedan pocas unidades. Considera reabastecer pronto para evitar quiebres.`,
+          ? "Este producto no tiene unidades disponibles."
+          : "Quedan pocas unidades. Considera reabastecer.",
       });
     });
-    if (commissionsTotal > 0) {
+    if (realCommissions > 0) {
       v.push({
         id: "commissions",
         severity: "info",
-        category: "fx_loss",
+        category: "commissions",
         title: "Comisiones del día",
-        description: `Estimado ${(COMMISSION_RATE * 100).toFixed(0)}% sobre ventas con agente`,
-        amount: `-$${commissionsTotal.toFixed(2)} MXN`,
-        explanation: "Monto que se pagará a agentes. Asegúrate de registrarlo como gasto cuando se liquide.",
+        description: "Comisiones reales registradas en ventas POS",
+        amount: `-$${realCommissions.toFixed(2)}`,
+        explanation: "Monto real de comisiones pagadas a agentes.",
       });
     }
     if (expensesTotal > 0) {
       v.push({
         id: "expenses",
         severity: "info",
-        category: "fx_loss",
+        category: "expenses",
         title: "Gastos del día",
         description: "Suma de movimientos tipo gasto",
         amount: `-$${expensesTotal.toFixed(2)} MXN`,
-        explanation: "Gastos registrados hoy. Compara con tu presupuesto operativo.",
+        explanation: "Gastos registrados hoy.",
       });
     }
     setVerboseAlerts(v);
-
     setLoading(false);
   }, [date]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const totalLosses = losses.commissions + losses.fxLoss + losses.expenses;
-  const netProfit = summary.profit - totalLosses;
+  const loadAgentDetails = async (agentName: string) => {
+    if (expandedAgent === agentName) { setExpandedAgent(null); return; }
+    setExpandedAgent(agentName);
+    setLoadingAgent(true);
+    const monthStart = startOfMonth(date).toISOString();
+    const monthEnd = endOfMonth(date).toISOString();
+
+    const { data: sales } = await supabase
+      .from("pos_sales")
+      .select("id, product_name, total_amount, currency, commission_mxn, commission_currency, sale_date, sales_agent")
+      .eq("sales_agent", agentName)
+      .gte("sale_date", monthStart).lte("sale_date", monthEnd)
+      .order("sale_date", { ascending: false });
+
+    const saleIds = (sales || []).map(s => s.id);
+    let consBysale: Record<string, number> = {};
+    if (saleIds.length > 0) {
+      const { data: cons } = await supabase
+        .from("pos_sale_batch_consumption").select("sale_id, total_cost_mxn")
+        .in("sale_id", saleIds);
+      (cons || []).forEach(c => {
+        consBysale[c.sale_id] = (consByale[c.sale_id] || 0) + Number(c.total_cost_mxn || 0);
+      });
+    }
+
+    const details: AgentSaleDetail[] = (sales || []).map((s: any) => ({
+      date: s.sale_date,
+      product: s.product_name,
+      invoice: "",
+      salePrice: Number(s.total_amount),
+      cost: consByale[s.id] || 0,
+      commission: Number(s.commission_mxn || 0),
+      commissionCurrency: s.commission_currency || "MXN",
+      profit: Number(s.total_amount) - (consByale[s.id] || 0) - Number(s.commission_mxn || 0),
+      currency: s.currency,
+    }));
+    setAgentDetails(details);
+    setLoadingAgent(false);
+  };
+
+  const exportAgentReport = () => {
+    if (agentDetails.length === 0) return;
+    const header = "Fecha,Producto,Precio,Costo,Comisión,Moneda Com.,Utilidad,Divisa";
+    const rows = agentDetails.map(d =>
+      `${new Date(d.date).toLocaleDateString("es-MX")},${d.product},${d.salePrice.toFixed(2)},${d.cost.toFixed(2)},${d.commission.toFixed(2)},${d.commissionCurrency},${d.profit.toFixed(2)},${d.currency}`
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `agente_${expandedAgent}_${format(date, "yyyy-MM")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const totalProfit = summary.productProfit + summary.fxProfit;
 
   return (
     <div className="space-y-5">
@@ -360,13 +391,13 @@ export function OwnerDashboard() {
                 <p className="text-2xl font-bold">${summary.totalSalesMxn.toFixed(0)}</p>
                 <p className="text-[10px] text-muted-foreground">MXN</p>
               </div>
-              <div className={`rounded-2xl p-4 border ${netProfit >= 0 ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"}`}>
-                {netProfit >= 0 ? <TrendingUp className="h-4 w-4 text-success mb-1" /> : <TrendingDown className="h-4 w-4 text-destructive mb-1" />}
-                <p className="text-xs text-muted-foreground">Utilidad neta</p>
-                <p className={`text-2xl font-bold ${netProfit >= 0 ? "text-success" : "text-destructive"}`}>
-                  ${netProfit.toFixed(0)}
+              <div className={`rounded-2xl p-4 border ${totalProfit >= 0 ? "bg-success/5 border-success/20" : "bg-destructive/5 border-destructive/20"}`}>
+                {totalProfit >= 0 ? <TrendingUp className="h-4 w-4 text-success mb-1" /> : <TrendingDown className="h-4 w-4 text-destructive mb-1" />}
+                <p className="text-xs text-muted-foreground">Utilidad real</p>
+                <p className={`text-2xl font-bold ${totalProfit >= 0 ? "text-success" : "text-destructive"}`}>
+                  ${totalProfit.toFixed(0)}
                 </p>
-                <p className="text-[10px] text-muted-foreground">tras pérdidas</p>
+                <p className="text-[10px] text-muted-foreground">producto + FX</p>
               </div>
               <div className="bg-card rounded-2xl p-3 shadow-fintech-sm">
                 <ShoppingBag className="h-4 w-4 text-muted-foreground mb-1" />
@@ -377,6 +408,34 @@ export function OwnerDashboard() {
                 <Package className="h-4 w-4 text-muted-foreground mb-1" />
                 <p className="text-lg font-bold">${summary.cogs.toFixed(0)}</p>
                 <p className="text-[10px] text-muted-foreground">Costo mercancía (COGS)</p>
+              </div>
+            </div>
+          </section>
+
+          {/* PROFIT BREAKDOWN */}
+          <section className="bg-card rounded-2xl shadow-fintech-sm p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Desglose de utilidad</h3>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-muted/30 rounded-xl p-3">
+                <p className="text-[10px] text-muted-foreground">Producto</p>
+                <p className={`text-sm font-bold ${summary.productProfit >= 0 ? "text-success" : "text-destructive"}`}>
+                  ${summary.productProfit.toFixed(0)}
+                </p>
+              </div>
+              <div className="bg-muted/30 rounded-xl p-3">
+                <p className="text-[10px] text-muted-foreground">Cambio (FX)</p>
+                <p className={`text-sm font-bold ${summary.fxProfit >= 0 ? "text-success" : "text-destructive"}`}>
+                  ${summary.fxProfit.toFixed(0)}
+                </p>
+              </div>
+              <div className="bg-muted/30 rounded-xl p-3">
+                <p className="text-[10px] text-muted-foreground">Total</p>
+                <p className={`text-sm font-bold ${totalProfit >= 0 ? "text-success" : "text-destructive"}`}>
+                  ${totalProfit.toFixed(0)}
+                </p>
               </div>
             </div>
           </section>
@@ -423,23 +482,6 @@ export function OwnerDashboard() {
             )}
           </section>
 
-          {/* LOSS DETECTION */}
-          <section className="bg-card rounded-2xl shadow-fintech-sm p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <TrendingDown className="h-4 w-4 text-destructive" />
-              <h3 className="text-sm font-semibold">Detección de pérdidas</h3>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <LossCard label="Comisiones" value={losses.commissions} />
-              <LossCard label="Conversión" value={losses.fxLoss} />
-              <LossCard label="Gastos" value={losses.expenses} />
-            </div>
-            <div className="pt-2 border-t flex items-center justify-between">
-              <span className="text-xs font-semibold">Total pérdidas</span>
-              <span className="text-sm font-bold text-destructive">-${totalLosses.toFixed(2)} MXN</span>
-            </div>
-          </section>
-
           {/* CURRENCY ANALYSIS */}
           <section className="bg-card rounded-2xl shadow-fintech-sm p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -479,25 +521,79 @@ export function OwnerDashboard() {
             ) : (
               <div className="space-y-2">
                 {agents.map((a) => (
-                  <div key={a.agent} className="bg-muted/30 rounded-xl p-3 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold">{a.agent}</span>
-                      <span className="text-[10px] text-muted-foreground">{a.sales} venta{a.sales > 1 ? "s" : ""}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 text-[11px]">
-                      <div>
-                        <p className="text-[9px] text-muted-foreground uppercase">Ventas</p>
-                        <p className="font-semibold">${a.revenueMxn.toFixed(0)}</p>
+                  <div key={a.agent} className="space-y-0">
+                    <button
+                      onClick={() => loadAgentDetails(a.agent)}
+                      className="w-full bg-muted/30 rounded-xl p-3 space-y-1 text-left hover:bg-muted/50 transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold">{a.agent}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">{a.sales} venta{a.sales > 1 ? "s" : ""}</span>
+                          {expandedAgent === a.agent ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[9px] text-muted-foreground uppercase">Comisión</p>
-                        <p className="font-semibold text-warning">${a.commission.toFixed(0)}</p>
+                      <div className="grid grid-cols-4 gap-1 text-[11px]">
+                        <div>
+                          <p className="text-[9px] text-muted-foreground uppercase">Ventas</p>
+                          <p className="font-semibold">${a.revenueMxn.toFixed(0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] text-muted-foreground uppercase">Com. MXN</p>
+                          <p className="font-semibold text-warning">${a.commissionMxn.toFixed(0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] text-muted-foreground uppercase">Com. USD</p>
+                          <p className="font-semibold text-warning">${a.commissionUsd.toFixed(0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] text-muted-foreground uppercase">Utilidad</p>
+                          <p className={`font-semibold ${a.profitMxn >= 0 ? "text-success" : "text-destructive"}`}>${a.profitMxn.toFixed(0)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[9px] text-muted-foreground uppercase">Utilidad</p>
-                        <p className={`font-semibold ${a.profitMxn >= 0 ? "text-success" : "text-destructive"}`}>${a.profitMxn.toFixed(0)}</p>
+                    </button>
+
+                    {expandedAgent === a.agent && (
+                      <div className="bg-muted/20 rounded-b-xl p-3 space-y-2 animate-fade-in">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                            Detalle mensual ({format(date, "MMMM yyyy", { locale: es })})
+                          </p>
+                          <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1" onClick={exportAgentReport}>
+                            <Download className="h-3 w-3" /> CSV
+                          </Button>
+                        </div>
+                        {loadingAgent ? (
+                          <p className="text-xs text-muted-foreground">Cargando...</p>
+                        ) : agentDetails.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sin ventas este mes.</p>
+                        ) : (
+                          <>
+                            <div className="max-h-48 overflow-y-auto space-y-1">
+                              {agentDetails.map((d, i) => (
+                                <div key={i} className="grid grid-cols-5 gap-1 text-[10px] items-center bg-card rounded-lg p-2">
+                                  <span>{new Date(d.date).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}</span>
+                                  <span className="truncate">{d.product}</span>
+                                  <span className="text-right">{d.salePrice.toFixed(0)} {d.currency}</span>
+                                  <span className="text-right text-warning">{d.commission.toFixed(0)} {d.commissionCurrency}</span>
+                                  <span className={`text-right font-bold ${d.profit >= 0 ? "text-success" : "text-destructive"}`}>
+                                    {d.profit >= 0 ? "🟢" : "🔴"} {d.profit.toFixed(0)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-4 gap-1 text-[10px] border-t pt-2 font-bold">
+                              <span>Total</span>
+                              <span className="text-right">${agentDetails.reduce((s, d) => s + d.salePrice, 0).toFixed(0)}</span>
+                              <span className="text-right text-warning">${agentDetails.reduce((s, d) => s + d.commission, 0).toFixed(0)}</span>
+                              <span className={`text-right ${agentDetails.reduce((s, d) => s + d.profit, 0) >= 0 ? "text-success" : "text-destructive"}`}>
+                                ${agentDetails.reduce((s, d) => s + d.profit, 0).toFixed(0)}
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -564,15 +660,6 @@ export function OwnerDashboard() {
           </section>
         </>
       )}
-    </div>
-  );
-}
-
-function LossCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="bg-muted/30 rounded-xl p-3">
-      <p className="text-[10px] text-muted-foreground">{label}</p>
-      <p className="text-sm font-bold text-destructive">-${value.toFixed(0)}</p>
     </div>
   );
 }

@@ -34,6 +34,13 @@ interface ReportSummary {
   deliveredOrders: number;
 }
 
+interface CurrencyBreakdown {
+  currency: string;
+  income: number;
+  expense: number;
+  net: number;
+}
+
 interface ExpenseBreakdown {
   source: string;
   currency: string;

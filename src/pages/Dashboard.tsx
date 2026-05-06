@@ -302,6 +302,34 @@ export default function Dashboard() {
       const { error } = await supabase.from("inventory_movements").insert(movements);
       if (error) toast.warning("Error al descontar inventario");
     }
+    // Consume currency lots via FIFO for profit tracking
+    const currencies = [
+      { currency: "USD", amount: order.usd_amount },
+      { currency: "EUR", amount: order.eur_amount },
+      { currency: "CUP", amount: order.cup_amount },
+    ].filter(c => c.amount > 0);
+    for (const c of currencies) {
+      // Calculate proportional MXN received for this currency
+      const totalForeignMxn = currencies.reduce((s, cur) => {
+        const rate = rates.find(r => r.currency === cur.currency);
+        if (!rate) return s;
+        const mxn = cur.currency === "CUP" && rate.sell_rate > 0 ? cur.amount / rate.sell_rate : cur.amount * (rate.sell_rate || 0);
+        return s + mxn;
+      }, 0);
+      const rate = rates.find(r => r.currency === c.currency);
+      const mxnForCurrency = rate
+        ? (c.currency === "CUP" && rate.sell_rate > 0 ? c.amount / rate.sell_rate : c.amount * (rate.sell_rate || 0))
+        : 0;
+      const proportion = totalForeignMxn > 0 ? mxnForCurrency / totalForeignMxn : 0;
+      const mxnReceived = order.total_mxn * proportion;
+
+      await supabase.rpc("consume_currency_lots_fifo", {
+        _currency: c.currency,
+        _quantity: c.amount,
+        _order_id: orderId,
+        _mxn_received: mxnReceived,
+      });
+    }
   };
 
   const revertInventory = async (order: Order, orderId: string) => {

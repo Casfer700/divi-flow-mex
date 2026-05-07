@@ -18,6 +18,7 @@ interface Account {
   currency: string;
   initial_balance: number;
   is_active: boolean;
+  show_in_pos: boolean;
   notes: string | null;
 }
 
@@ -46,6 +47,7 @@ export function AccountsManager() {
     currency: "MXN",
     initial_balance: "0",
     is_active: true,
+    show_in_pos: true,
     notes: "",
   });
 
@@ -59,7 +61,7 @@ export function AccountsManager() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: "", account_type: "cash", currency: "MXN", initial_balance: "0", is_active: true, notes: "" });
+    setForm({ name: "", account_type: "cash", currency: "MXN", initial_balance: "0", is_active: true, show_in_pos: true, notes: "" });
     setIsOpen(true);
   };
 
@@ -71,6 +73,7 @@ export function AccountsManager() {
       currency: acc.currency,
       initial_balance: String(acc.initial_balance),
       is_active: acc.is_active,
+      show_in_pos: acc.show_in_pos,
       notes: acc.notes || "",
     });
     setIsOpen(true);
@@ -84,6 +87,7 @@ export function AccountsManager() {
       currency: form.currency,
       initial_balance: parseFloat(form.initial_balance) || 0,
       is_active: form.is_active,
+      show_in_pos: form.show_in_pos,
       notes: form.notes || null,
     };
     const { error } = editing

@@ -203,6 +203,10 @@ export function AccountsManager() {
               <Label className="text-sm font-medium">Activa</Label>
               <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
             </div>
+            <div className="flex items-center justify-between bg-muted/50 rounded-xl px-3 py-2">
+              <Label className="text-sm font-medium">Mostrar en POS</Label>
+              <Switch checked={form.show_in_pos} onCheckedChange={(v) => setForm({ ...form, show_in_pos: v })} />
+            </div>
             <Button type="submit" className="w-full h-12 rounded-xl font-semibold">
               {editing ? "Guardar" : "Crear"}
             </Button>

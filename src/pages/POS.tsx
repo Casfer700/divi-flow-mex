@@ -395,6 +395,21 @@ export default function POS() {
       await supabase.from("currency_lots").insert(lotInserts);
     }
 
+    // Create inventory movements for foreign currency payments
+    const foreignPayments = payments.filter(p => ["USD", "EUR", "CUP"].includes(p.currency) && parseFloat(p.amount) > 0);
+    if (foreignPayments.length > 0) {
+      const invMovements = foreignPayments.map(p => ({
+        currency: p.currency,
+        amount: parseFloat(p.amount),
+        movement_type: "in",
+        reference_type: "pos_sale",
+        reference_id: saleRow.id,
+        notes: `POS - ${selected.name}`,
+        created_by: user?.id,
+      }));
+      await supabase.from("inventory_movements").insert(invMovements);
+    }
+
     if (payments[0].account_id) localStorage.setItem(LS_ACCOUNT, payments[0].account_id);
 
     setSubmitting(false);

@@ -26,6 +26,7 @@ interface Account {
   id: string;
   name: string;
   currency: string;
+  show_in_pos: boolean;
 }
 
 interface RecentSale {
@@ -124,7 +125,7 @@ export default function POS() {
   const load = async () => {
     const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }, { data: ags }, { data: invs }] = await Promise.all([
       supabase.from("products").select("id,name,base_price,currency,category,is_invoice_tracked").eq("is_active", true).order("name"),
-      supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
+      supabase.from("accounts").select("id,name,currency,show_in_pos").eq("is_active", true).order("name"),
       supabase
         .from("pos_sales")
         .select("id,product_name,total_amount,currency,sales_agent,sale_date,status")
@@ -250,7 +251,7 @@ export default function POS() {
 
   const filteredInvoices = useMemo(() => {
     const q = invoiceSearch.trim().toLowerCase();
-    if (!q) return productInvoices;
+    if (!q) return [];
     return productInvoices.filter((i) => i.invoice_number.toLowerCase().includes(q));
   }, [productInvoices, invoiceSearch]);
 

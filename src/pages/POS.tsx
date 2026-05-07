@@ -602,7 +602,7 @@ export default function POS() {
                 )}
 
                 {payments.map((p) => {
-                  const matchingAccounts = accounts.filter((a) => a.currency === p.currency);
+                  const matchingAccounts = accounts.filter((a) => a.currency === p.currency && a.show_in_pos);
                   const amt = parseFloat(p.amount) || 0;
                   const isEmpty = !amt || amt <= 0;
                   return (

@@ -26,6 +26,7 @@ interface Account {
   id: string;
   name: string;
   currency: string;
+  show_in_pos: boolean;
 }
 
 interface RecentSale {
@@ -124,7 +125,7 @@ export default function POS() {
   const load = async () => {
     const [{ data: prods }, { data: accs }, { data: sales }, { data: ex }, { data: stockRows }, { data: ags }, { data: invs }] = await Promise.all([
       supabase.from("products").select("id,name,base_price,currency,category,is_invoice_tracked").eq("is_active", true).order("name"),
-      supabase.from("accounts").select("id,name,currency").eq("is_active", true).order("name"),
+      supabase.from("accounts").select("id,name,currency,show_in_pos").eq("is_active", true).order("name"),
       supabase
         .from("pos_sales")
         .select("id,product_name,total_amount,currency,sales_agent,sale_date,status")
@@ -250,7 +251,7 @@ export default function POS() {
 
   const filteredInvoices = useMemo(() => {
     const q = invoiceSearch.trim().toLowerCase();
-    if (!q) return productInvoices;
+    if (!q) return [];
     return productInvoices.filter((i) => i.invoice_number.toLowerCase().includes(q));
   }, [productInvoices, invoiceSearch]);
 
@@ -392,6 +393,21 @@ export default function POS() {
         };
       });
       await supabase.from("currency_lots").insert(lotInserts);
+    }
+
+    // Create inventory movements for foreign currency payments
+    const foreignPayments = payments.filter(p => ["USD", "EUR", "CUP"].includes(p.currency) && parseFloat(p.amount) > 0);
+    if (foreignPayments.length > 0) {
+      const invMovements = foreignPayments.map(p => ({
+        currency: p.currency,
+        amount: parseFloat(p.amount),
+        movement_type: "in",
+        reference_type: "pos_sale",
+        reference_id: saleRow.id,
+        notes: `POS - ${selected.name}`,
+        created_by: user?.id,
+      }));
+      await supabase.from("inventory_movements").insert(invMovements);
     }
 
     if (payments[0].account_id) localStorage.setItem(LS_ACCOUNT, payments[0].account_id);
@@ -601,7 +617,7 @@ export default function POS() {
                 )}
 
                 {payments.map((p) => {
-                  const matchingAccounts = accounts.filter((a) => a.currency === p.currency);
+                  const matchingAccounts = accounts.filter((a) => a.currency === p.currency && a.show_in_pos);
                   const amt = parseFloat(p.amount) || 0;
                   const isEmpty = !amt || amt <= 0;
                   return (

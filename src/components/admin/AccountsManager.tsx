@@ -18,6 +18,7 @@ interface Account {
   currency: string;
   initial_balance: number;
   is_active: boolean;
+  show_in_pos: boolean;
   notes: string | null;
 }
 
@@ -46,6 +47,7 @@ export function AccountsManager() {
     currency: "MXN",
     initial_balance: "0",
     is_active: true,
+    show_in_pos: true,
     notes: "",
   });
 
@@ -59,7 +61,7 @@ export function AccountsManager() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: "", account_type: "cash", currency: "MXN", initial_balance: "0", is_active: true, notes: "" });
+    setForm({ name: "", account_type: "cash", currency: "MXN", initial_balance: "0", is_active: true, show_in_pos: true, notes: "" });
     setIsOpen(true);
   };
 
@@ -71,6 +73,7 @@ export function AccountsManager() {
       currency: acc.currency,
       initial_balance: String(acc.initial_balance),
       is_active: acc.is_active,
+      show_in_pos: acc.show_in_pos,
       notes: acc.notes || "",
     });
     setIsOpen(true);
@@ -84,6 +87,7 @@ export function AccountsManager() {
       currency: form.currency,
       initial_balance: parseFloat(form.initial_balance) || 0,
       is_active: form.is_active,
+      show_in_pos: form.show_in_pos,
       notes: form.notes || null,
     };
     const { error } = editing
@@ -126,6 +130,9 @@ export function AccountsManager() {
                   <p className="text-sm font-semibold truncate">{acc.name}</p>
                   {!acc.is_active && (
                     <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactiva</span>
+                  )}
+                  {acc.show_in_pos && (
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">POS</span>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -198,6 +205,10 @@ export function AccountsManager() {
             <div className="flex items-center justify-between bg-muted/50 rounded-xl px-3 py-2">
               <Label className="text-sm font-medium">Activa</Label>
               <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
+            </div>
+            <div className="flex items-center justify-between bg-muted/50 rounded-xl px-3 py-2">
+              <Label className="text-sm font-medium">Mostrar en POS</Label>
+              <Switch checked={form.show_in_pos} onCheckedChange={(v) => setForm({ ...form, show_in_pos: v })} />
             </div>
             <Button type="submit" className="w-full h-12 rounded-xl font-semibold">
               {editing ? "Guardar" : "Crear"}

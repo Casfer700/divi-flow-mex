@@ -131,6 +131,9 @@ export function AccountsManager() {
                   {!acc.is_active && (
                     <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded">Inactiva</span>
                   )}
+                  {acc.show_in_pos && (
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">POS</span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {TYPE_LABEL[acc.account_type]} · {acc.currency}

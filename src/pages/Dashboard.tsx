@@ -15,6 +15,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { getOrderAmounts } from "@/lib/format";
 import { toast } from "sonner";
 import { Search, Package, Users, ArrowLeftRight, TrendingUp, Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
@@ -64,9 +75,22 @@ interface Order {
   assigned_to: string | null;
   delivery_notes: string | null;
   delivery_date: string | null;
+  created_at: string;
   customers: Customer;
   assigned_user?: Profile;
 }
+
+// Insignias de estado: fondo suave + texto oscuro del mismo color (contraste alto, se lee al sol).
+type BadgeTone = "success" | "warning" | "danger" | "info";
+const BADGE_TONES: Record<BadgeTone, { bg: string; fg: string }> = {
+  success: { bg: "hsl(152 69% 41% / 0.14)", fg: "hsl(152 69% 20%)" },
+  warning: { bg: "hsl(38 92% 50% / 0.16)", fg: "hsl(30 95% 24%)" },
+  danger: { bg: "hsl(0 72% 55% / 0.12)", fg: "hsl(0 72% 36%)" },
+  info: { bg: "hsl(262 52% 51% / 0.12)", fg: "hsl(262 52% 36%)" },
+};
+
+const isSameLocalDay = (iso: string | null | undefined) =>
+  !!iso && new Date(iso).toDateString() === new Date().toDateString();
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -103,6 +127,7 @@ export default function Dashboard() {
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -186,7 +211,7 @@ export default function Dashboard() {
     const errors: string[] = [];
     if (usd > 0 && usd > balances.USD) errors.push(`USD: disponible $${balances.USD.toFixed(2)}, solicitado $${usd.toFixed(2)}`);
     if (eur > 0 && eur > balances.EUR) errors.push(`EUR: disponible €${balances.EUR.toFixed(2)}, solicitado €${eur.toFixed(2)}`);
-    if (cup > 0 && cup > balances.CUP) errors.push(`CUP: disponible $${balances.CUP.toFixed(2)}, solicitado $${cup.toFixed(2)}`);
+    if (cup > 0 && cup > balances.CUP) errors.push(`CUP: disponible ${balances.CUP.toFixed(2)}, solicitado ${cup.toFixed(2)}`);
     if (errors.length > 0) return { valid: false, message: `Stock insuficiente:\n${errors.join("\n")}` };
     return { valid: true };
   };
@@ -232,6 +257,14 @@ export default function Dashboard() {
     setFormData({ customer_id: "", usd_amount: "", eur_amount: "", cup_amount: "", total_mxn: "", price_type: "retail", assigned_to: "", delivery_date: undefined, delivery_notes: "" });
   };
 
+  // Deshacer rápido (aviso de 6 segundos): solo vuelve el estado anterior de la orden.
+  const undoStatusChange = async (orderId: string, field: "payment_status" | "delivery_status", previousValue: string) => {
+    const { error } = await supabase.from("orders").update({ [field]: previousValue }).eq("id", orderId);
+    if (error) { toast.error("No se pudo deshacer el cambio"); return; }
+    toast.success("Cambio deshecho");
+    fetchOrders();
+  };
+
   const updateOrderStatus = async (orderId: string, field: "payment_status" | "delivery_status", value: string) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
@@ -252,7 +285,25 @@ export default function Dashboard() {
       await revertInventory(order, orderId);
     }
 
-    toast.success("Estado actualizado");
+    // Aviso claro de lo que pasó. "Deshacer" solo en pago y "en camino": la entrega mueve
+    // inventario y lotes de divisa, así que se revierte desde el menú ⋮ de la tarjeta.
+    if (field === "payment_status" && value === "paid" && order.payment_status === "pending") {
+      toast.success("Orden marcada como pagada", {
+        duration: 6000,
+        action: { label: "Deshacer", onClick: () => undoStatusChange(orderId, field, order.payment_status) },
+      });
+    } else if (field === "delivery_status" && value === "in_transit" && previousDeliveryStatus === "pending") {
+      toast.success("Orden marcada en camino", {
+        duration: 6000,
+        action: { label: "Deshacer", onClick: () => undoStatusChange(orderId, field, previousDeliveryStatus) },
+      });
+    } else if (field === "delivery_status" && value === "delivered") {
+      toast.success("Orden marcada como entregada");
+    } else if (field === "payment_status") {
+      toast.success("Pago revertido");
+    } else {
+      toast.success("Entrega revertida");
+    }
 
     // Telegram notifications for status changes
     if (field === "payment_status" && value === "paid") {
@@ -380,14 +431,19 @@ export default function Dashboard() {
     fetchOrders();
   };
 
+  // El menú ⋮ solo pide eliminar: la confirmación es el cuadro de diálogo de abajo.
+  const requestDeleteOrder = (orderId: string) => {
+    const found = orders.find(o => o.id === orderId);
+    if (found) setOrderToDelete(found);
+  };
+
   const handleDeleteOrder = async (orderId: string) => {
-    if (!confirm("¿Estás seguro de eliminar esta orden?")) return;
-    const orderToDelete = orders.find(o => o.id === orderId);
-    if (!orderToDelete) { toast.error("Orden no encontrada"); return; }
+    const deletingOrder = orders.find(o => o.id === orderId);
+    if (!deletingOrder) { toast.error("Orden no encontrada"); return; }
     const { error } = await supabase.from("orders").delete().eq("id", orderId);
     if (error) { toast.error("Error al eliminar orden"); return; }
-    if (orderToDelete.delivery_status === "delivered") {
-      await revertInventory(orderToDelete, orderId);
+    if (deletingOrder.delivery_status === "delivered") {
+      await revertInventory(deletingOrder, orderId);
       toast.success("Orden eliminada e inventario revertido");
     } else {
       toast.success("Orden eliminada");
@@ -457,7 +513,7 @@ export default function Dashboard() {
     const currencyAmounts = [
       order.usd_amount > 0 ? `USD: $${order.usd_amount.toFixed(2)}` : null,
       order.eur_amount > 0 ? `EUR: €${order.eur_amount.toFixed(2)}` : null,
-      order.cup_amount > 0 ? `CUP: $${order.cup_amount.toFixed(2)}` : null,
+      order.cup_amount > 0 ? `CUP: ${order.cup_amount.toFixed(2)}` : null,
     ].filter(Boolean).join("\n");
     const paymentLabels: Record<string, string> = { pending: "Pendiente", paid: "Pagado" };
     const deliveryLabels: Record<string, string> = { pending: "Pendiente", in_transit: "En tránsito", delivered: "Entregado" };
@@ -474,23 +530,25 @@ export default function Dashboard() {
   };
 
   const getPaymentBadge = (status: string) => {
-    const config: Record<string, { label: string; bg: string }> = {
-      pending: { label: "Pendiente", bg: "hsl(0, 72%, 55%)" },
-      paid: { label: "✓ Pagado", bg: "hsl(152, 69%, 41%)" },
-      verified: { label: "✓ Pagado", bg: "hsl(152, 69%, 41%)" },
+    const config: Record<string, { label: string; tone: BadgeTone }> = {
+      pending: { label: "Pago pendiente", tone: "danger" },
+      paid: { label: "✓ Pagado", tone: "success" },
+      verified: { label: "✓ Pagado", tone: "success" },
     };
     const c = config[status] || config.pending;
-    return <Badge className="border-0 text-[10px] h-5 px-2 rounded-full font-medium" style={{ backgroundColor: c.bg, color: "white" }}>{c.label}</Badge>;
+    const t = BADGE_TONES[c.tone];
+    return <Badge className="border-0 text-xs h-6 px-2.5 rounded-full font-semibold" style={{ backgroundColor: t.bg, color: t.fg }}>{c.label}</Badge>;
   };
 
   const getDeliveryBadge = (status: string) => {
-    const config: Record<string, { label: string; bg: string }> = {
-      pending: { label: "Por entregar", bg: "hsl(38, 92%, 50%)" },
-      in_transit: { label: "En camino", bg: "hsl(262, 52%, 51%)" },
-      delivered: { label: "✓ Entregado", bg: "hsl(152, 69%, 41%)" },
+    const config: Record<string, { label: string; tone: BadgeTone }> = {
+      pending: { label: "Por entregar", tone: "warning" },
+      in_transit: { label: "En camino", tone: "info" },
+      delivered: { label: "✓ Entregado", tone: "success" },
     };
     const c = config[status] || config.pending;
-    return <Badge className="border-0 text-[10px] h-5 px-2 rounded-full font-medium" style={{ backgroundColor: c.bg, color: "white" }}>{c.label}</Badge>;
+    const t = BADGE_TONES[c.tone];
+    return <Badge className="border-0 text-xs h-6 px-2.5 rounded-full font-semibold" style={{ backgroundColor: t.bg, color: t.fg }}>{c.label}</Badge>;
   };
 
   const filteredOrders = orders.filter(order => {
@@ -502,12 +560,11 @@ export default function Dashboard() {
   const localOrders = filteredOrders.filter(order => !order.assigned_to || order.assigned_user?.role === "local");
   const deliveryOrders = filteredOrders.filter(order => order.assigned_user?.role === "delivery");
 
-  // Today's stats
-  const today = new Date().toDateString();
-  const todayOrders = orders.filter(o => new Date(o.delivery_date || "").toDateString() === today || new Date().toDateString() === today);
-  const totalToday = orders.length;
-  const deliveredToday = orders.filter(o => o.delivery_status === "delivered").length;
-  const pendingToday = orders.filter(o => o.delivery_status === "pending").length;
+  // Cifras de HOY: órdenes con fecha de entrega hoy; si no tienen fecha de entrega, las creadas hoy.
+  const todaysOrders = orders.filter(o => (o.delivery_date ? isSameLocalDay(o.delivery_date) : isSameLocalDay(o.created_at)));
+  const totalToday = todaysOrders.length;
+  const deliveredToday = todaysOrders.filter(o => o.delivery_status === "delivered").length;
+  const pendingToday = totalToday - deliveredToday;
 
   const isAdminOrLocal = profile?.role === "admin" || profile?.role === "local";
 
@@ -676,18 +733,23 @@ export default function Dashboard() {
       <div className="space-y-4">
         {/* Stats row - only for admin/local */}
         {isAdminOrLocal && (
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-card rounded-xl p-3 shadow-fintech-sm text-center">
-              <p className="text-2xl font-bold">{totalToday}</p>
-              <p className="text-[10px] text-muted-foreground font-medium">Total</p>
-            </div>
-            <div className="bg-card rounded-xl p-3 shadow-fintech-sm text-center">
-              <p className="text-2xl font-bold text-success">{deliveredToday}</p>
-              <p className="text-[10px] text-muted-foreground font-medium">Entregadas</p>
-            </div>
-            <div className="bg-card rounded-xl p-3 shadow-fintech-sm text-center">
-              <p className="text-2xl font-bold text-warning">{pendingToday}</p>
-              <p className="text-[10px] text-muted-foreground font-medium">Pendientes</p>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Hoy · {format(new Date(), "EEEE d 'de' MMMM", { locale: es })}
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-card rounded-xl p-3 shadow-fintech-sm text-center">
+                <p className="text-2xl font-bold tabular-nums">{totalToday}</p>
+                <p className="text-xs text-muted-foreground font-medium">Total</p>
+              </div>
+              <div className="bg-card rounded-xl p-3 shadow-fintech-sm text-center">
+                <p className="text-2xl font-bold tabular-nums text-[hsl(152,69%,28%)]">{deliveredToday}</p>
+                <p className="text-xs text-muted-foreground font-medium">Entregadas</p>
+              </div>
+              <div className="bg-card rounded-xl p-3 shadow-fintech-sm text-center">
+                <p className="text-2xl font-bold tabular-nums text-[hsl(32,95%,32%)]">{pendingToday}</p>
+                <p className="text-xs text-muted-foreground font-medium">Pendientes</p>
+              </div>
             </div>
           </div>
         )}
@@ -706,11 +768,11 @@ export default function Dashboard() {
         {/* Orders */}
         {isAdminOrLocal ? (
           <Tabs defaultValue="local" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 h-11 rounded-xl bg-secondary p-1">
-              <TabsTrigger value="local" className="rounded-lg text-xs font-semibold data-[state=active]:bg-card data-[state=active]:shadow-fintech-sm">
+            <TabsList className="grid w-full grid-cols-2 h-[52px] rounded-xl bg-secondary p-1">
+              <TabsTrigger value="local" className="rounded-lg text-sm font-semibold data-[state=active]:bg-card data-[state=active]:shadow-fintech-sm">
                 Local ({localOrders.length})
               </TabsTrigger>
-              <TabsTrigger value="delivery" className="rounded-lg text-xs font-semibold data-[state=active]:bg-card data-[state=active]:shadow-fintech-sm">
+              <TabsTrigger value="delivery" className="rounded-lg text-sm font-semibold data-[state=active]:bg-card data-[state=active]:shadow-fintech-sm">
                 Delivery ({deliveryOrders.length})
               </TabsTrigger>
             </TabsList>
@@ -722,7 +784,7 @@ export default function Dashboard() {
               ) : localOrders.map((order) => (
                 <OrderCard key={order.id} order={order} profile={profile} user={user}
                   onUpdateStatus={updateOrderStatus} onOpenDeliveryDialog={openDeliveryDialog}
-                  onSendWhatsApp={sendWhatsApp} onEditOrder={openEditDialog} onDeleteOrder={handleDeleteOrder}
+                  onSendWhatsApp={sendWhatsApp} onEditOrder={openEditDialog} onDeleteOrder={requestDeleteOrder}
                   getPaymentBadge={getPaymentBadge} getDeliveryBadge={getDeliveryBadge} />
               ))}
             </TabsContent>
@@ -734,7 +796,7 @@ export default function Dashboard() {
               ) : deliveryOrders.map((order) => (
                 <OrderCard key={order.id} order={order} profile={profile} user={user}
                   onUpdateStatus={updateOrderStatus} onOpenDeliveryDialog={openDeliveryDialog}
-                  onSendWhatsApp={sendWhatsApp} onEditOrder={openEditDialog} onDeleteOrder={handleDeleteOrder}
+                  onSendWhatsApp={sendWhatsApp} onEditOrder={openEditDialog} onDeleteOrder={requestDeleteOrder}
                   getPaymentBadge={getPaymentBadge} getDeliveryBadge={getDeliveryBadge} />
               ))}
             </TabsContent>
@@ -748,7 +810,7 @@ export default function Dashboard() {
             ) : filteredOrders.map((order) => (
               <OrderCard key={order.id} order={order} profile={profile} user={user}
                 onUpdateStatus={updateOrderStatus} onOpenDeliveryDialog={openDeliveryDialog}
-                onSendWhatsApp={sendWhatsApp} onEditOrder={openEditDialog} onDeleteOrder={handleDeleteOrder}
+                onSendWhatsApp={sendWhatsApp} onEditOrder={openEditDialog} onDeleteOrder={requestDeleteOrder}
                 getPaymentBadge={getPaymentBadge} getDeliveryBadge={getDeliveryBadge} />
             ))}
           </div>
@@ -767,6 +829,41 @@ export default function Dashboard() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         {renderOrderForm(handleEditSubmit, "Editar orden", "Guardar cambios")}
       </Dialog>
+
+      {/* Confirmar eliminación (reemplaza el cuadro del navegador) */}
+      <AlertDialog open={!!orderToDelete} onOpenChange={(open) => { if (!open) setOrderToDelete(null); }}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta orden?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {orderToDelete && (
+                <>
+                  Se eliminará la orden de <strong className="text-foreground">{orderToDelete.customers.name}</strong>
+                  {getOrderAmounts(orderToDelete).length > 0 && (
+                    <> por <strong className="text-foreground">{getOrderAmounts(orderToDelete).map(a => a.text).join(" + ")}</strong></>
+                  )}
+                  .{orderToDelete.delivery_status === "delivered" && " Como ya fue entregada, la divisa se devolverá al inventario."}{" "}
+                  Esta acción no se puede deshacer.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!orderToDelete) return;
+                const id = orderToDelete.id;
+                setOrderToDelete(null);
+                handleDeleteOrder(id);
+              }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delivery update dialog */}
       <Dialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen}>

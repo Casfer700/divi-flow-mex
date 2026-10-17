@@ -26,7 +26,7 @@ export function FloatingActionButton({ actions }: FloatingActionButtonProps) {
       )}
 
       {/* Actions menu */}
-      <div className="fixed bottom-20 md:bottom-6 right-4 z-50 flex flex-col items-end gap-2">
+      <div className="fixed fab-offset right-4 z-50 flex flex-col items-end gap-2">
         {isOpen && actions.map((action, i) => (
           <div
             key={i}

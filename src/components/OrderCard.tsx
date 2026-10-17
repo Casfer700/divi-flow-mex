@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MessageCircle, MapPin, Check, MoreVertical, Edit, Trash2, Truck, CreditCard, User, CalendarIcon, Undo2 } from "lucide-react";
+import { MessageCircle, MapPin, MoreVertical, Edit, Trash2, Truck, CreditCard, User, CalendarIcon, Undo2 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { formatAmount, getOrderAmounts } from "@/lib/format";
 
 interface Customer {
   id: string;
@@ -50,38 +51,8 @@ interface OrderCardProps {
   getDeliveryBadge: (status: string) => JSX.Element;
 }
 
-function OrderProgressTimeline({ paymentStatus, deliveryStatus }: { paymentStatus: string; deliveryStatus: string }) {
-  const steps = [
-    { label: "Pago", completed: paymentStatus === "paid" || paymentStatus === "verified", active: paymentStatus === "pending" },
-    { label: "Entregado", completed: deliveryStatus === "delivered", active: (paymentStatus === "paid" || paymentStatus === "verified") && deliveryStatus !== "delivered" },
-  ];
-
-  return (
-    <div className="flex items-center gap-1 w-full">
-      {steps.map((step, i) => (
-        <div key={step.label} className="flex items-center flex-1">
-          <div className="flex flex-col items-center flex-1">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold transition-colors ${
-              step.completed
-                ? "bg-success text-success-foreground"
-                : step.active
-                ? "bg-warning text-warning-foreground"
-                : "bg-muted text-muted-foreground"
-            }`}>
-              {step.completed ? <Check className="h-3.5 w-3.5" /> : i + 1}
-            </div>
-            <span className="text-[10px] mt-1 text-muted-foreground font-medium">{step.label}</span>
-          </div>
-          {i < steps.length - 1 && (
-            <div className={`h-0.5 flex-1 -mt-4 mx-0.5 rounded-full ${
-              step.completed ? "bg-success" : "bg-muted"
-            }`} />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
+// Verde oscuro: el texto blanco se lee bien sobre él (el verde claro no alcanzaba contraste).
+const PAY_BUTTON = "bg-[hsl(152,69%,28%)] hover:bg-[hsl(152,69%,24%)] text-white";
 
 export function OrderCard({
   order,
@@ -95,22 +66,29 @@ export function OrderCard({
   getPaymentBadge,
   getDeliveryBadge,
 }: OrderCardProps) {
-  const mainAmount = order.usd_amount > 0
-    ? `$${order.usd_amount.toFixed(2)} USD`
-    : order.eur_amount > 0
-    ? `€${order.eur_amount.toFixed(2)} EUR`
-    : `$${order.cup_amount.toFixed(2)} CUP`;
-
-  const secondaryAmounts = [
-    order.usd_amount > 0 ? `$${order.usd_amount.toFixed(2)} USD` : null,
-    order.eur_amount > 0 ? `€${order.eur_amount.toFixed(2)} EUR` : null,
-    order.cup_amount > 0 ? `$${order.cup_amount.toFixed(2)} CUP` : null,
-  ].filter(Boolean);
+  // Monto principal = primera moneda; las demás se muestran como "+ otra moneda".
+  const amounts = getOrderAmounts(order);
+  const mainAmount = amounts[0]?.text ?? formatAmount(0, "USD");
+  const extraAmounts = amounts.slice(1);
 
   const isAdminOrLocal = profile?.role === "admin" || profile?.role === "local";
   const isDeliveryOwner = profile?.role === "delivery" && order.assigned_to === user?.id;
   const isPaid = order.payment_status === "paid" || order.payment_status === "verified";
   const isDelivered = order.delivery_status === "delivered";
+
+  const showPay = isAdminOrLocal && order.payment_status === "pending";
+  const showDeliver = isAdminOrLocal && order.delivery_status !== "delivered";
+  const deliverLabel = order.delivery_status === "pending" ? "En camino" : "Entregado";
+  const deliverNext = order.delivery_status === "pending" ? "in_transit" : "delivered";
+
+  // Un solo botón destacado: el siguiente paso (primero el pago, luego la entrega).
+  const primary: "update" | "pay" | "deliver" | null = isDeliveryOwner
+    ? "update"
+    : showPay
+    ? "pay"
+    : showDeliver
+    ? "deliver"
+    : null;
 
   return (
     <div className="bg-card rounded-2xl shadow-fintech-md p-4 space-y-3 animate-fade-in">
@@ -118,9 +96,9 @@ export function OrderCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-base truncate">{order.customers.name}</h3>
-          <div className="flex items-center gap-1 mt-0.5">
-            <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-            <p className="text-xs text-muted-foreground truncate">{order.customers.address}</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <MapPin className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <p className="text-sm text-muted-foreground truncate">{order.customers.address}</p>
           </div>
         </div>
 
@@ -128,31 +106,45 @@ export function OrderCard({
         {isAdminOrLocal && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 min-h-0 flex-shrink-0">
-                <MoreVertical className="h-4 w-4" />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Más opciones"
+                className="h-11 w-11 -mt-1.5 -mr-2 flex-shrink-0 rounded-full"
+              >
+                <MoreVertical className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover">
               {onEditOrder && (
-                <DropdownMenuItem onClick={() => onEditOrder(order)}>
+                <DropdownMenuItem onClick={() => onEditOrder(order)} className="py-3 text-sm">
                   <Edit className="h-4 w-4 mr-2" />
                   Editar
                 </DropdownMenuItem>
               )}
               {isPaid && (
-                <DropdownMenuItem onClick={() => onUpdateStatus(order.id, "payment_status", "pending")}>
+                <DropdownMenuItem
+                  onClick={() => onUpdateStatus(order.id, "payment_status", "pending")}
+                  className="py-3 text-sm"
+                >
                   <Undo2 className="h-4 w-4 mr-2" />
                   Revertir pago
                 </DropdownMenuItem>
               )}
               {isDelivered && (
-                <DropdownMenuItem onClick={() => onUpdateStatus(order.id, "delivery_status", "pending")}>
+                <DropdownMenuItem
+                  onClick={() => onUpdateStatus(order.id, "delivery_status", "pending")}
+                  className="py-3 text-sm"
+                >
                   <Undo2 className="h-4 w-4 mr-2" />
                   Revertir entrega
                 </DropdownMenuItem>
               )}
               {onDeleteOrder && (
-                <DropdownMenuItem onClick={() => onDeleteOrder(order.id)} className="text-destructive">
+                <DropdownMenuItem
+                  onClick={() => onDeleteOrder(order.id)}
+                  className="py-3 text-sm text-destructive focus:text-destructive"
+                >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Eliminar
                 </DropdownMenuItem>
@@ -162,95 +154,102 @@ export function OrderCard({
         )}
       </div>
 
-      {/* Amount section */}
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="text-2xl font-bold tracking-tight">{mainAmount}</p>
-          <p className="text-sm text-muted-foreground font-medium">${order.total_mxn.toFixed(2)} MXN</p>
+      {/* Amount + status (el estado se muestra una sola vez: en las insignias) */}
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-2xl font-bold tracking-tight tabular-nums">{mainAmount}</p>
+          <p className="text-sm text-muted-foreground font-medium tabular-nums">{formatAmount(order.total_mxn, "MXN")}</p>
         </div>
-        <div className="flex flex-col gap-1 items-end">
+        <div className="flex flex-col gap-1 items-end flex-shrink-0">
           {getPaymentBadge(order.payment_status)}
           {getDeliveryBadge(order.delivery_status)}
         </div>
       </div>
 
-      {/* Badges row */}
+      {/* Detail chips */}
       <div className="flex flex-wrap gap-1.5">
-        <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium">
+        <Badge variant="outline" className="text-xs h-6 px-2.5 rounded-full font-medium">
           {order.price_type === "retail" ? "Menudeo" : order.price_type === "wholesale" ? "Mayoreo" : "Individual"}
         </Badge>
         {order.assigned_user && (
-          <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium gap-1">
-            <User className="h-2.5 w-2.5" />
+          <Badge variant="outline" className="text-xs h-6 px-2.5 rounded-full font-medium gap-1">
+            <User className="h-3 w-3" />
             {order.assigned_user.full_name}
           </Badge>
         )}
         {order.delivery_date && (
-          <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium gap-1">
-            <CalendarIcon className="h-2.5 w-2.5" />
+          <Badge variant="outline" className="text-xs h-6 px-2.5 rounded-full font-medium gap-1">
+            <CalendarIcon className="h-3 w-3" />
             {format(new Date(order.delivery_date), "d MMM", { locale: es })}
           </Badge>
         )}
-        {secondaryAmounts.length > 1 && (
-          <Badge variant="outline" className="text-[10px] h-5 px-2 rounded-full font-medium">
-            {secondaryAmounts.join(" · ")}
+        {extraAmounts.map((a) => (
+          <Badge key={a.currency} variant="outline" className="text-xs h-6 px-2.5 rounded-full font-medium tabular-nums">
+            + {a.text}
           </Badge>
-        )}
+        ))}
       </div>
 
-      {/* Progress timeline */}
-      <OrderProgressTimeline paymentStatus={order.payment_status} deliveryStatus={order.delivery_status} />
-
       {order.delivery_notes && (
-        <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2 italic">
+        <p className="text-sm text-muted-foreground bg-muted/50 rounded-xl px-3 py-2 italic">
           {order.delivery_notes}
         </p>
       )}
 
-      {/* Primary quick actions */}
-      <div className="flex gap-2 pt-1">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => onSendWhatsApp(order)}
-          className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium"
-        >
-          <MessageCircle className="h-4 w-4" />
-          WhatsApp
-        </Button>
-
-        {isAdminOrLocal && order.payment_status === "pending" && (
+      {/* Acciones: arriba el siguiente paso, abajo las secundarias */}
+      <div className="space-y-2 pt-1">
+        {primary === "pay" && (
           <Button
-            size="sm"
             onClick={() => onUpdateStatus(order.id, "payment_status", "paid")}
-            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium bg-success hover:bg-success/90 text-success-foreground"
+            className={`w-full h-11 rounded-xl gap-2 text-sm font-semibold ${PAY_BUTTON}`}
           >
             <CreditCard className="h-4 w-4" />
-            Pagado
+            Marcar como pagado
           </Button>
         )}
 
-        {isAdminOrLocal && order.delivery_status !== "delivered" && (
+        {primary === "deliver" && (
           <Button
-            size="sm"
-            onClick={() => onUpdateStatus(order.id, "delivery_status", order.delivery_status === "pending" ? "in_transit" : "delivered")}
-            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium"
+            onClick={() => onUpdateStatus(order.id, "delivery_status", deliverNext)}
+            className="w-full h-11 rounded-xl gap-2 text-sm font-semibold"
           >
             <Truck className="h-4 w-4" />
-            {order.delivery_status === "pending" ? "En camino" : "Entregado"}
+            {order.delivery_status === "pending" ? "Marcar en camino" : "Marcar como entregado"}
           </Button>
         )}
 
-        {isDeliveryOwner && (
+        {primary === "update" && (
           <Button
-            size="sm"
             onClick={() => onOpenDeliveryDialog(order)}
-            className="flex-1 h-10 rounded-xl gap-1.5 text-xs font-medium"
+            className="w-full h-11 rounded-xl gap-2 text-sm font-semibold"
           >
             <Truck className="h-4 w-4" />
-            Actualizar
+            Actualizar entrega
           </Button>
         )}
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => onSendWhatsApp(order)}
+            className="flex-1 h-11 rounded-xl gap-2 text-sm font-medium"
+          >
+            <MessageCircle className="h-4 w-4" />
+            WhatsApp
+          </Button>
+
+          {/* Si falta el pago, la entrega sigue disponible pero como acción secundaria */}
+          {primary === "pay" && showDeliver && (
+            <Button
+              variant="outline"
+              onClick={() => onUpdateStatus(order.id, "delivery_status", deliverNext)}
+              className="flex-1 h-11 rounded-xl gap-2 text-sm font-medium"
+            >
+              <Truck className="h-4 w-4" />
+              {deliverLabel}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -32,9 +32,9 @@ export function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-0">
+    <div className="min-h-screen bg-background pb-safe-nav">
       {/* Top header - sleek */}
-      <header className="bg-card sticky top-0 z-30 shadow-fintech-sm">
+      <header className="bg-card sticky top-0 z-30 shadow-fintech-sm pt-safe">
         <div className="px-4 h-14 flex items-center justify-between max-w-screen-xl mx-auto">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -81,7 +81,7 @@ export function Layout({ children }: LayoutProps) {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-card border-t shadow-fintech-lg">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-card border-t shadow-fintech-lg pb-safe">
         <div className="flex justify-around items-center h-16 px-2">
           {navigation.map((item) => {
             const Icon = item.icon;
@@ -92,7 +92,7 @@ export function Layout({ children }: LayoutProps) {
                   isActive ? "text-primary" : "text-muted-foreground"
                 }`}>
                   <Icon className="h-5 w-5" />
-                  <span className="text-[10px] font-medium">{item.name}</span>
+                  <span className="text-[11px] font-medium">{item.name}</span>
                 </div>
               </Link>
             );

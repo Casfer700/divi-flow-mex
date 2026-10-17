@@ -72,6 +72,9 @@
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-tap-highlight-color: transparent;
+    /* Respeta los bordes del teléfono (notch) cuando el teléfono está de lado */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   /* Better touch targets for mobile */
@@ -105,6 +108,30 @@
     display: none;
   }
 
+  /* Espacio seguro para el notch y la barra inferior del iPhone */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Página con menú inferior (5rem = alto del menú + aire) */
+  .pb-safe-nav {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+  /* Botón flotante: arriba del menú inferior en móvil, esquina en escritorio */
+  .fab-offset {
+    bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+  @media (min-width: 768px) {
+    .pb-safe-nav {
+      padding-bottom: 0;
+    }
+    .fab-offset {
+      bottom: 1.5rem;
+    }
+  }
+
   /* POS payments UX */
   @keyframes flash-pulse {
     0% { transform: scale(1); }
@@ -129,3 +156,40 @@
   }
 }
 
+
+/*
+  Zoom permitido (accesibilidad): iOS hace zoom automático al tocar un campo con
+  letra menor a 16px, así que en móvil los campos de texto usan siempre 16px.
+*/
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Movimiento reducido: sin deslizamientos ni rebotes, solo un fundido suave */
+@keyframes reduced-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-scale-in,
+  .animate-slide-down,
+  .animate-flash {
+    animation: reduced-fade 150ms ease-out !important;
+  }
+}

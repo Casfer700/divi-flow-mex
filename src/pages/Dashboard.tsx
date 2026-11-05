@@ -128,9 +128,9 @@ export default function Dashboard() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [showAllOrders, setShowAllOrders] = useState(false);
 
   useEffect(() => {
-    fetchOrders();
     fetchCustomers();
     fetchUsers();
     fetchRates();
@@ -138,14 +138,25 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    fetchOrders();
+  }, [showAllOrders]);
+
+  useEffect(() => {
     calculateTotal();
   }, [formData.usd_amount, formData.eur_amount, formData.cup_amount, formData.price_type]);
 
   const fetchOrders = async () => {
-    const { data, error } = await supabase
+    // Por defecto: órdenes sin pagar, sin entregar, o creadas/programadas para hoy (las cifras de hoy dependen de esto)
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const since = startOfToday.toISOString();
+    let query = supabase
       .from("orders")
-      .select(`*, customers (*), assigned_user:profiles!orders_assigned_to_fkey (id, full_name, role)`)
-      .order("created_at", { ascending: false });
+      .select(`*, customers (*), assigned_user:profiles!orders_assigned_to_fkey (id, full_name, role)`);
+    if (!showAllOrders) {
+      query = query.or(`payment_status.eq.pending,delivery_status.neq.delivered,created_at.gte.${since},delivery_date.gte.${since}`);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false });
     if (error) { toast.error("Error al cargar órdenes"); return; }
     setOrders((data || []) as Order[]);
   };
@@ -815,6 +826,12 @@ export default function Dashboard() {
             ))}
           </div>
         )}
+
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setShowAllOrders((v) => !v)}>
+            {showAllOrders ? "Ver solo pendientes y de hoy" : "Ver todas las órdenes"}
+          </Button>
+        </div>
       </div>
 
       {/* FAB */}
